@@ -1,0 +1,55 @@
+{
+  "image": "dist/DIGITAL_IRIS.BIN",
+  "size_bytes": 823200,
+  "sha256": "e7a067345b1390499840f38aee5d6e62a66e4df243b225839c76c42befe9835c",
+  "sector_scan": {
+    "sectors": 350,
+    "bad_sync": 0,
+    "bad_msf": 0,
+    "bad_mode": 0,
+    "bad_subheader": 0,
+    "bad_edc": 0
+  },
+  "volume_id": "DIGITAL_IRIS",
+  "files": [
+    {
+      "name": "SYSTEM.CNF;1",
+      "lba": 23,
+      "size": 66,
+      "directory": false
+    },
+    {
+      "name": "DIRIS.EXE;1",
+      "lba": 24,
+      "size": 79872,
+      "directory": false
+    }
+  ],
+  "system_cnf": "BOOT = cdrom:\\DIRIS.EXE;1\r\nTCB = 4\r\nEVENT = 10\r\nSTACK = 801FFF00\r\n",
+  "boot_target": "cdrom:\\DIRIS.EXE;1",
+  "exe": {
+    "pc": "0x80010000",
+    "load": "0x80010000",
+    "text_size": 77824,
+    "sp": "0x801FFF00",
+    "file_size": 79872
+  },
+  "checks": {
+    "raw_2352_sectors": true,
+    "sector_sync_ok": true,
+    "sector_msf_ok": true,
+    "sector_mode2_ok": true,
+    "subheader_duplicated": true,
+    "edc_ok": true,
+    "iso9660_pvd": true,
+    "system_cnf_exists": true,
+    "boot_entry_exists": true,
+    "boot_matches_iso_directory": true,
+    "psx_exe_signature": true,
+    "exe_payload_fits_file": true,
+    "exe_load_in_main_ram": true,
+    "exe_fits_main_ram": true,
+    "exe_entry_in_text": true
+  },
+  "result": "PASS"
+}

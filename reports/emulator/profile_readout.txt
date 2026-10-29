@@ -1,0 +1,38 @@
+DIGITAL IRIS - on-console section timings
+Measured by the ROM's own profiler (root counter 1, hblank source),
+read off DuckStation screenshots. 1 bar pixel = 2 hblanks = 127.1 us.
+One NTSC field = 525 hblanks = 16.68 ms.
+
+== frame A (19.94 fps = 3 fields) ==
+  section      hblanks       ms
+  sky                0     0.00
+  fuji              82     5.21
+  far               42     2.67
+  water            100     6.36
+  ground           128     8.14
+  grass            226    14.36
+  iris              68     4.32
+  particles          0     0.00
+  present          110     6.99
+  pad                0     0.00
+  reset              0     0.00
+  SUM              756    48.05
+
+== frame B (14.95 fps = 4 fields) ==
+  section      hblanks       ms
+  sky                0     0.00
+  fuji              82     5.21
+  far               42     2.67
+  water            100     6.36
+  ground           120     7.63
+  grass            232    14.75
+  iris             250    15.89
+  particles          0     0.00
+  present          162    10.30
+  pad                0     0.00
+  reset              0     0.00
+  SUM              988    62.80
+
+'present' is DMA of the ordering table plus the wait for vblank, so it
+absorbs the slack up to the next field boundary; CPU+GPU work is the
+sum minus that row.

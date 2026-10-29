@@ -1,0 +1,6 @@
+build/
+build-host/
+*.o
+*.elf
+*.map
+preview/

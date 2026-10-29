@@ -1,0 +1,31 @@
+{
+  "image": "/mnt/data/DIGITAL_IRIS.BIN",
+  "size_bytes": 430416,
+  "sha256": "a0e41f4640d9d7f5a2d470aaa4abae5e0cd3fce11f318eef6b6468ae78ab2aa2",
+  "checks": {
+    "2352_byte_sectors": true,
+    "iso9660_primary_descriptor": true,
+    "system_cnf_exists": true,
+    "boot_entry_exists": true,
+    "boot_file_matches_iso_directory": false
+  },
+  "files": [
+    {
+      "name": "DIGITAL_.EXE;1",
+      "lba": 24,
+      "size": 16384,
+      "directory": false
+    },
+    {
+      "name": "SYSTEM.CNF;1",
+      "lba": 32,
+      "size": 69,
+      "directory": false
+    }
+  ],
+  "sector_count": 183,
+  "volume_id": "DIGITAL_IRIS",
+  "system_cnf": "BOOT = cdrom:\\DIGITAL_IRIS.EXE;1\nTCB = 4\nEVENT = 10\nSTACK = 801FFFF0\n",
+  "boot_target": "DIGITAL_IRIS.EXE;1",
+  "failure": "SYSTEM.CNF BOOT target absent from ISO9660 directory."
+}

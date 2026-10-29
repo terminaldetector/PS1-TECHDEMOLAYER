@@ -1,0 +1,18 @@
+t=  2000ms sub=248   pkt=248   tri=410   px=170287  kb=0    | cull b=125  near=55   scr=211  clip=58   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t=  8000ms sub=253   pkt=253   tri=423   px=167113  kb=9    | cull b=125  near=56   scr=206  clip=48   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 15000ms sub=274   pkt=274   tri=490   px=159231  kb=9    | cull b=122  near=52   scr=194  clip=52   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 22000ms sub=348   pkt=348   tri=575   px=158930  kb=10   | cull b=120  near=46   scr=199  clip=57   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 30000ms sub=359   pkt=359   tri=604   px=149988  kb=12   | cull b=113  near=32   scr=229  clip=42   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 38000ms sub=414   pkt=414   tri=748   px=147195  kb=13   | cull b=110  near=29   scr=239  clip=27   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 45000ms sub=341   pkt=341   tri=633   px=139414  kb=16   | cull b=112  near=38   scr=287  clip=37   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 52000ms sub=362   pkt=362   tri=673   px=139845  kb=13   | cull b=110  near=34   scr=312  clip=41   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 58000ms sub=345   pkt=345   tri=646   px=140520  kb=14   | cull b=108  near=25   scr=310  clip=28   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 65000ms sub=378   pkt=378   tri=700   px=153418  kb=13   | cull b=111  near=20   scr=268  clip=12   drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 70000ms sub=400   pkt=400   tri=735   px=154693  kb=15   | cull b=108  near=20   scr=241  clip=8    drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 76000ms sub=426   pkt=426   tri=777   px=155059  kb=15   | cull b=106  near=20   scr=208  clip=2    drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 83000ms sub=442   pkt=442   tri=805   px=155356  kb=16   | cull b=108  near=20   scr=183  clip=0    drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 90000ms sub=475   pkt=476   tri=840   px=156585  kb=17   | cull b=107  near=20   scr=168  clip=0    drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t= 96000ms sub=496   pkt=506   tri=857   px=156260  kb=18   | cull b=108  near=20   scr=153  clip=0    drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t=103000ms sub=491   pkt=500   tri=852   px=155569  kb=19   | cull b=107  near=20   scr=151  clip=0    drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t=110000ms sub=497   pkt=507   tri=855   px=156023  kb=19   | cull b=108  near=20   scr=143  clip=0    drop=0 | oversz=0 unk=0 badtag=0 ovf=0
+t=116000ms sub=499   pkt=505   tri=866   px=156364  kb=19   | cull b=110  near=20   scr=134  clip=0    drop=0 | oversz=0 unk=0 badtag=0 ovf=0
