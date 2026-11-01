@@ -26,8 +26,12 @@ DEBUG_PAD = os.environ.get('GRANADA_DEBUG_PAD') == '1'
 NGPLUS_MAX = 7         # HP multiplier caps at 8x
 
 
-def build_code(sym):
-    """Assemble the injected code block at G.NEWCODE.  Returns (bytes, labels)."""
+def build_code(rom):
+    """Assemble the injected code block at G.NEWCODE.  Returns (bytes, labels).
+
+    `rom` is the untouched original, read only to copy the stock options-screen
+    dispatch table into the relocated, one-entry-longer copy.
+    """
     a = Asm(G.NEWCODE)
     P = G.PAD_PORT
 
@@ -88,7 +92,7 @@ def build_code(sym):
     # New Game+ counter is cleared whenever the title/option screen runs, so
     # a fresh run always starts at NG+0.
     a.label('ngreset')
-    a.move_w_imm_absw(0, G.HK_NGPLUS)
+    a.move_w_absw_absw(G.OPT_NGPLUS, G.HK_NGPLUS)
     a.move_b_imm_absw(0x00, 0xBEC4)        # the instruction we displaced
     a.jmp_l(0x2EBA)
 
@@ -191,6 +195,72 @@ def build_code(sym):
                           'a0','a1','a2','a3','a4','a5','a6']))
     a.rts()
 
+    # ====================== GAME MODE row on the options screen ==========
+    # Seeds the NG+ level when a game begins.  Replaces the
+    # "move.b #$12,$FFF600" that both the CONTINUE and GAME START paths run.
+    a.label('applyng')
+    a.move_b_imm_absl(0x12, 0xFFF600)
+    a.move_w_absw_absw(G.OPT_NGPLUS, G.HK_NGPLUS)
+    a.rts()
+
+    # Draw the value cell of the GAME MODE row.
+    a.label('ngval')
+    ALL = ['d0','d1','d2','d3','d4','d5','d6','d7','a0','a1','a2','a3','a4','a5','a6']
+    a.movem_push(push_mask(ALL))
+    a.move_l_imm_dn(G.OPT_CURSOR_VDP + 6 * 0x80 + 0x16, 'd0')   # value column
+    a.jsr_l(G.SET_VDP_ADDR)
+    a.moveq(0, 'd0')
+    a.move_w_absw_dn(G.OPT_NGPLUS, 'd0')
+    a.andi_l_dn(0x07, 'd0')
+    a.asl_l_imm(3, 'd0')                      # 8-byte records
+    a.movea_l_imm(0, 'a0')                    # patched below to str_vals
+    a.adda_l_dn('d0', 'a0')
+    a.jsr_l(G.DRAW_STRING)
+    a.movem_pop(pop_mask(ALL))
+    a.rts()
+
+    # Draw the whole extra row.  Replaces "moveq #0,d7 / move.l #$C650,d0"
+    # at the tail of the option screen's draw code, so it must leave those
+    # two registers exactly as that code did.
+    a.label('ngrow')
+    SOME = ['d0','d1','d2','d3','d4','d5','d6','a0','a1','a2','a3','a4','a5','a6']
+    a.movem_push(push_mask(SOME))
+    a.move_l_imm_dn(G.OPT_CURSOR_VDP + 6 * 0x80 + 2, 'd0')      # label column
+    a.jsr_l(G.SET_VDP_ADDR)
+    a.movea_l_imm(0, 'a0')                    # patched below to str_label
+    a.jsr_l(G.DRAW_STRING)
+    a.bsr_w('ngval')
+    a.movem_pop(pop_mask(SOME))
+    a.moveq(0, 'd7')
+    a.move_l_imm_dn(G.OPT_CURSOR_VDP, 'd0')
+    a.rts()
+
+    # Row handler, reached through the relocated dispatch table.  Left/right
+    # move through NORMAL and NG+1..NG+7, mirroring how the RANK row works.
+    a.label('ngedit')
+    a.move_w_absw_dn(G.OPT_NGPLUS, 'd5')
+    a.move_b_absw_dn(0xF602, 'd0')
+    a.btst_imm_dn(2, 'd0')                    # LEFT (active low)
+    a.bne_w('ng_nl')
+    a.subq_w_absw(1, G.OPT_NGPLUS)
+    a.tst_w_absw(G.OPT_NGPLUS)
+    a.bge_w('ng_nl')
+    a.move_w_imm_absw(NGPLUS_MAX, G.OPT_NGPLUS)
+    a.label('ng_nl')
+    a.btst_imm_dn(3, 'd0')                    # RIGHT
+    a.bne_w('ng_nr')
+    a.addq_w_absw(1, G.OPT_NGPLUS)
+    a.cmpi_w_absw(NGPLUS_MAX, G.OPT_NGPLUS)
+    a.bls_w('ng_nr')
+    a.move_w_imm_absw(0, G.OPT_NGPLUS)
+    a.label('ng_nr')
+    a.cmp_w_absw_dn(G.OPT_NGPLUS, 'd5')
+    a.beq_w('ng_done')
+    a.move_w_absw_absw(G.OPT_NGPLUS, G.HK_NGPLUS)
+    a.bsr_w('ngval')
+    a.label('ng_done')
+    a.jmp_l(G.OPT_LOOP)
+
     # fire one projectile: d2 = kind, d3 = angle (0..63), a4 = player struct.
     # Argument layout copied from the stock call site at $97EC-$9820.
     a.label('fireshot')
@@ -219,7 +289,32 @@ def build_code(sym):
     a.movem_pop(pop_mask(['d4', 'd5', 'd6', 'd7', 'a0']))
     a.rts()
 
-    return a.assemble(), a.labels
+    # relocated dispatch table: the stock seven rows, GAME MODE inserted
+    # before EXIT so EXIT stays the last entry
+    a.label('opttbl')
+    rows = [G.be32(rom, G.OPT_DISPATCH + 4 * i) for i in range(G.OPT_ROWS)]
+    for t in rows[:6]:
+        a.raw(struct.pack('>I', t))
+    a.raw(b'\x00\x00\x00\x00')          # placeholder for 'ngedit'
+    a.raw(struct.pack('>I', rows[6]))     # EXIT
+
+    a.label('str_label')
+    a.raw(b'GAME MODE\x00')
+    a.label('str_vals')
+    for i in range(8):
+        txt = b'NORMAL' if i == 0 else (b'NG+%d  ' % i)
+        a.raw(txt + b'\x00\x00')
+
+    code = bytearray(a.assemble())
+    L = a.labels
+    base = G.NEWCODE
+    # fill the placeholders that needed label addresses
+    struct.pack_into('>I', code, L['opttbl'] + 24 - base, L['ngedit'])
+    for lbl, sym in (('ngval', 'str_vals'), ('ngrow', 'str_label')):
+        # patch the movea.l #0,a0 inside each routine
+        i = code.index(b'\x20\x7c\x00\x00\x00\x00', L[lbl] - base)
+        struct.pack_into('>I', code, i + 2, L[sym])
+    return bytes(code), L
 
 
 # ---------------------------------------------------------------- map I/O
@@ -501,7 +596,7 @@ def main():
         print("warning: source ROM checksum already differs from its header")
     rom = orig
 
-    code, labels = build_code(None)
+    code, labels = build_code(orig)
     if G.NEWCODE + len(code) > G.NEWCODE_END:
         raise SystemExit("injected code overflows the free ROM block")
     # the free block must really be free
@@ -521,6 +616,23 @@ def main():
     rom = apply_hook(rom, G.SPAWN_SET_HP, labels['hpscale'], 10)
     # 4. X / Y / Z weapons
     rom = apply_hook(rom, G.PLAYER_FIRE, labels['firehook'], 10)
+
+    # 4b. GAME MODE row on the options screen
+    rom = bytearray(rom)
+    #   cursor now wraps over eight rows instead of seven
+    rom[0x384B] = G.OPT_ROWS                       # moveq #7,d7 (wrap up)
+    struct.pack_into('>I', rom, 0x385A, G.OPT_ROWS)  # cmpi.l #7,d7 (wrap down)
+    #   relocate the row dispatch table: lea $3B84(pc),a0 + nop -> movea.l #tbl,a0
+    struct.pack_into('>HI', rom, 0x38AC, 0x207C, labels['opttbl'])
+    #   EXIT moves one row down to make space
+    struct.pack_into('>I', rom, 0x3776, G.OPT_EXIT_VDP + 0x80)
+    #   draw the new row: moveq #0,d7 / move.l #$C650,d0 -> jsr ngrow + nop
+    struct.pack_into('>HIH', rom, 0x37E2, 0x4EB9, labels['ngrow'], 0x4E71)
+    #   seed the NG+ level when a game begins (CONTINUE and GAME START)
+    for site in (G.GAME_START_1, G.GAME_START_2):
+        struct.pack_into('>HIH', rom, site, 0x4EB9, labels['applyng'], 0x4E71)
+    rom = bytes(rom)
+    print("options screen: GAME MODE row added (NORMAL, NG+1..NG+%d)" % NGPLUS_MAX)
 
     # 5. a second boss on stage 1
     rom, info = place_second_boss(rom, 0)

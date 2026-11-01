@@ -206,3 +206,12 @@ def _extend2(cls):
     for f in (ori_b_imm_dn, btst_imm_dn, not_b_dn):
         setattr(cls, f.__name__, f)
 _extend2(Asm)
+
+def _extend3(cls):
+    def bge_w(self, t):  return self._branch(0x6C, t)
+    def blt_w(self, t):  return self._branch(0x6D, t)
+    def move_w_absw_absw(self, src, dst):    # move.w $src.w,$dst.w
+        return self.raw(b'\x31\xf8' + _w(src) + _w(dst))
+    for f in (bge_w, blt_w, move_w_absw_absw):
+        setattr(cls, f.__name__, f)
+_extend3(Asm)

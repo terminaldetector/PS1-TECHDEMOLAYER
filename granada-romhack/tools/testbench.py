@@ -77,6 +77,66 @@ def run_feature_tests(rom):
     check("Z / Omni Burst fires without the stock trigger held",
           omni.get(1, 0) > 0, "kind1=%d" % omni.get(1, 0))
 
+def tap(gr, *btns, hold=6, gap=16):
+    gr.press(*btns); gr.step(hold)
+    gr.press();      gr.step(gap)
+
+
+def enter_options(gr):
+    gr.step(600)
+    tap(gr, 'START', gap=40)     # title -> menu
+    tap(gr, 'DOWN')              # GAME START -> OPTIONS
+    tap(gr, 'START', gap=60)
+
+
+def run_options_test(rom):
+    print("\n[3] GAME MODE row on the options screen  (%s)" % os.path.basename(rom))
+    gr = Granada(rom)
+    enter_options(gr)
+    check("options screen reached, GAME MODE defaults to NORMAL",
+          gr.rb(0xFFF600) == 0x06 and gr.rw(0xFFFE1E) == 0,
+          "mode=%02X value=%d" % (gr.rb(0xFFF600), gr.rw(0xFFFE1E)))
+
+    # the stock rows must still work after the dispatch table was relocated
+    stock0 = gr.rw(0xFFFE08)                 # GRANADA (lives)
+    tap(gr, 'RIGHT')
+    check("stock row 0 (GRANADA) still responds", gr.rw(0xFFFE08) != stock0,
+          "%d -> %d" % (stock0, gr.rw(0xFFFE08)))
+    tap(gr, 'DOWN')
+    stock1 = gr.rw(0xFFFE06)                 # RANK
+    tap(gr, 'RIGHT')
+    check("stock row 1 (RANK) still responds", gr.rw(0xFFFE06) != stock1,
+          "%d -> %d" % (stock1, gr.rw(0xFFFE06)))
+
+    # down to the new row (cursor is on row 1 now)
+    for _ in range(5):
+        tap(gr, 'DOWN')
+    tap(gr, 'RIGHT')
+    v1 = gr.rw(0xFFFE1E)
+    check("GAME MODE steps up off NORMAL", v1 > 0, "value=%d" % v1)
+    check("choosing a mode seeds the live NG+ level", gr.rw(0xFFF658) == v1,
+          "setting=%d live=%d" % (v1, gr.rw(0xFFF658)))
+    for _ in range(12):
+        tap(gr, 'RIGHT')
+    check("GAME MODE wraps instead of running past NG+7",
+          0 <= gr.rw(0xFFFE1E) <= 7, "value=%d" % gr.rw(0xFFFE1E))
+    while gr.rw(0xFFFE1E) != 3:
+        tap(gr, 'RIGHT' if gr.rw(0xFFFE1E) < 3 else 'LEFT')
+
+    tap(gr, 'DOWN')                          # EXIT is now the last row
+    tap(gr, 'START', gap=60)
+    check("EXIT returns to the title menu", gr.rb(0xFFF600) == 0x06)
+    tap(gr, 'START', gap=90)
+    gr.step(240)
+    check("game starts with the chosen mode applied",
+          gr.rb(0xFFF600) == 0x12 and gr.rw(0xFFF658) == 3,
+          "mode=%02X live NG+=%d" % (gr.rb(0xFFF600), gr.rw(0xFFF658)))
+    hp = [gr.rl(0xFF8000 + 0x20 * i + 0x1C)
+          for i in range(128) if gr.rl(0xFF8000 + 0x20 * i) == 0x25]
+    check("bosses spawn with NG+3 hit points (64 x 4)", hp == [256, 256],
+          "hp=%s" % hp)
+
+
 def run_ngplus_test(rom):
     print("\n[2] New Game+ loop and difficulty scaling  (%s)" % os.path.basename(rom))
     gr = Granada(rom)
@@ -118,7 +178,13 @@ if __name__ == '__main__':
         os._exit(1 if FAIL else 0)
     _, status = os.waitpid(pid, 0)
     rc1 = status >> 8
+    pid = os.fork()
+    if pid == 0:
+        run_options_test(hack)
+        os._exit(1 if FAIL else 0)
+    _, status = os.waitpid(pid, 0)
+    rc2 = status >> 8
     run_ngplus_test(auto)
-    rc = 1 if (FAIL or rc1) else 0
+    rc = 1 if (FAIL or rc1 or rc2) else 0
     print("\n%s" % ("SOME CHECKS FAILED" if rc else "ALL CHECKS PASSED"))
     raise SystemExit(rc)

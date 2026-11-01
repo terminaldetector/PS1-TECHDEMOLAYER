@@ -47,7 +47,23 @@ RAM_PLAYER     = 0xAB14          # player struct; +4 X, +8 Y, +0x14 angle
 RAM_PSTATE     = 0xAB16          # player state (<=2 means "can act")
 RAM_TARGETS    = 0xB434          # remaining stage targets
 RAM_VINT_CNT   = 0xBEC0          # incremented every VBlank
-RAM_LIVES      = 0xFE06
+RAM_RANK       = 0xFE06          # option: EASY/NORMAL/HARD/MANIA
+RAM_STOCK      = 0xFE08          # option: number of Granadas (lives)
+
+# options screen ($36C6 draws it, $3802 is its loop)
+OPT_DISPATCH   = 0x3B84          # 7 longs, one row handler each
+OPT_ROWS       = 7               # cursor range 0..6 in the stock game
+OPT_CURSOR_VDP = 0xC650          # cursor cell = this + row * 0x80
+OPT_EXIT_VDP   = 0xC952          # where the EXIT label is drawn
+OPT_LOOP       = 0x3B80          # every row handler ends by branching here
+DRAW_STRING    = 0x7C20          # a0 = NUL-terminated string
+SET_VDP_ADDR   = 0x609E          # d0 = VDP address
+GAME_START_1   = 0x3578          # CONTINUE  : move.b #$12,$FFF600
+GAME_START_2   = 0x35CC          # GAME START: move.b #$12,$FFF600
+
+# $FFFE1E/$FFFE1F are the first bytes past the stock option block and are
+# never written by the original (verified on a running emulator)
+OPT_NGPLUS     = 0xFE1E          # word: NG+ level chosen in the options screen
 
 # free work RAM, verified untouched by the stock engine over a long play run
 HK_PAD6        = 0xF650          # byte: raw 6-button nibble (active low)
