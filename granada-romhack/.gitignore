@@ -1,4 +1,8 @@
+# ROM images are never committed - the hack ships as an IPS patch
 *.gen
-*.md5
 *.bin
+*.md5
 
+# build output written next to the sources; the canonical patch is the
+# committed granada_ngplus.ips
+/Granada_NGplus.*
