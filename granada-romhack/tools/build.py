@@ -15,13 +15,28 @@ import map_tool as M
 from asm68k import Asm, push_mask, pop_mask
 
 # ---------------------------------------------------------------- weapons
-# Projectile kinds understood by the engine's shot spawner at $9830 are 1..6
-# (dispatch table at $9FC0).  Kind 1 is the player's stock cannon.
-WEAPON_X_KIND = 1      # Spread Shot  - three stock rounds in a 3-step fan
-WEAPON_Y_KIND = 2      # Heavy Shell  - the engine's heavier round
-WEAPON_Z_KIND = 1      # Omni Burst   - four rounds, 90 degrees apart
+# Angles in this engine run 0..255 (shared -256*cos table at $8EC6), and the
+# shot spawner at $9830 takes eight long arguments.
+#
+#   X  Hyper Beam   a column of rounds laid along the aim vector, so it reads
+#                   as one lance rather than a stream
+#   Y  Support Fire arms a timed escort: flank guns that pick the nearest live
+#                   object with the engine's own arctangent helper and keep
+#                   firing at it without further input
+#   Z  Nova         a closed ring of rounds, 45 degrees apart
+BEAM_SEGMENTS  = 8     # rounds per beam (the projectile pool only holds 16)
+BEAM_SPACING   = 12    # pixels between beam segments
+NOVA_SHOTS     = 8
+SUPPORT_FRAMES = 300   # how long one Support Fire charge lasts
+SUPPORT_RATE   = 14    # frames between support volleys
 
-COOLDOWN_X, COOLDOWN_Y, COOLDOWN_Z = 10, 26, 22
+COOLDOWN_X, COOLDOWN_Y, COOLDOWN_Z = 55, 420, 34
+
+# Enemy aggression: the activation radius in each object template (+6) decides
+# how close the player must be before that object's AI runs at all.  Scaling it
+# makes the stage engage sooner and from further out.
+AGGRO_NUM, AGGRO_DEN = (int(x) for x in os.environ.get('GRANADA_AGGRO', '5,4').split(','))
+AGGRO_CAP = 0x1800     # leave the "always on" boss values (0x2710) alone
 DEBUG_PAD = os.environ.get('GRANADA_DEBUG_PAD') == '1'
 NGPLUS_MAX = 7         # HP multiplier caps at 8x
 
@@ -124,21 +139,27 @@ def build_code(rom):
     a.jmp_l(G.PLAYER_FIRE_R)
 
     a.label('xyz')
-    a.movem_push(push_mask(['d0','d1','d2','d3','d4','d5','d6','d7',
-                            'a0','a1','a2','a3','a4','a5','a6']))
+    ALLR = ['d0','d1','d2','d3','d4','d5','d6','d7','a0','a1','a2','a3','a4','a5','a6']
+    a.movem_push(push_mask(ALLR))
 
-    # ---- normalise the weapon buttons into $FFF65C (bit2=X,1=Y,0=Z, high=held)
+    # ---- normalise the specials buttons into $FFF65C (bit2=X,1=Y,0=Z) -----
+    a.tst_w_absw(G.OPT_SPECIAL)
+    a.bne_w('wb3')                            # option says "use A/B/C combos"
     a.tst_b_absw(G.HK_PAD6OK)
-    a.beq_w('wb3')
-    a.move_b_absw_dn(G.HK_PAD6, 'd0')     # 6-button pad: M X Y Z, active low
+    a.beq_w('wb_none')
+    a.move_b_absw_dn(G.HK_PAD6, 'd0')         # 6-button pad: M X Y Z, active low
     a.not_b_dn('d0')
     a.andi_b_dn(0x07, 'd0')
     a.move_b_dn_absw('d0', G.HK_WEAPREQ)
     a.bra_w('wb_done')
+    a.label('wb_none')
+    a.move_b_imm_absw(0, G.HK_WEAPREQ)
+    a.bra_w('wb_done')
 
-    # Fallback for a 3-button pad: the stock game leaves the A+B and B+C
-    # combo slots unassigned (see $3BBA/$3BC0 and the option defaults at
-    # $2F30/$2F36), and never looks at A+C at all, so all three are free.
+    # Opt-in fallback for a 3-button pad.  The stock game leaves the A+B and
+    # B+C combo slots unassigned ($3BBA/$3BC0 and the option defaults at
+    # $2F30/$2F36) and never looks at A+C, so all three are free - but they
+    # do overlap normal play, which is why this is off by default.
     a.label('wb3')
     a.moveq(0, 'd0')
     a.btst_b_imm_absw(4, 0xF604); a.bne_w('nx')     # A
@@ -165,37 +186,157 @@ def build_code(rom):
     a.cmpi_w_dn(2, 'd0')
     a.bhi_w('xyz_end')
 
-    def shot(angle_delta, kind):
-        a.move_l_dispan_dn(0x14, 'a4', 'd3')
-        if angle_delta:
-            a.addi_l_dn(angle_delta & 0x3F, 'd3')
-            a.andi_l_dn(0x3F, 'd3')
-        a.moveq(kind, 'd2')
-        a.bsr_w('fireshot')
-
-    # X - Spread Shot: three rounds in a fan
+    # X - Hyper Beam
     a.btst_b_imm_absw(2, G.HK_WEAPREQ); a.beq_w('do_y')
     a.tst_w_absw(G.HK_CD_X);            a.bne_w('do_y')
     a.move_w_imm_absw(COOLDOWN_X, G.HK_CD_X)
-    for d in (0, 3, -3): shot(d, WEAPON_X_KIND)
+    a.move_l_dispan_dn(0x14, 'a4', 'd3')
+    a.bsr_w('beam')
     a.label('do_y')
-    # Y - Heavy Shell: one heavy round, long cooldown
+    # Y - Support Fire: arms a timed escort that keeps shooting on its own
     a.btst_b_imm_absw(1, G.HK_WEAPREQ); a.beq_w('do_z')
     a.tst_w_absw(G.HK_CD_Y);            a.bne_w('do_z')
     a.move_w_imm_absw(COOLDOWN_Y, G.HK_CD_Y)
-    shot(0, WEAPON_Y_KIND)
+    a.move_w_imm_absw(SUPPORT_FRAMES, G.HK_SUPPORT)
+    a.move_w_imm_absw(0, G.HK_SUPCD)
     a.label('do_z')
-    # Z - Omni Burst: four rounds, 90 degrees apart
-    a.btst_b_imm_absw(0, G.HK_WEAPREQ); a.beq_w('xyz_end')
-    a.tst_w_absw(G.HK_CD_Z);            a.bne_w('xyz_end')
+    # Z - Nova: a full ring
+    a.btst_b_imm_absw(0, G.HK_WEAPREQ); a.beq_w('do_sup')
+    a.tst_w_absw(G.HK_CD_Z);            a.bne_w('do_sup')
     a.move_w_imm_absw(COOLDOWN_Z, G.HK_CD_Z)
-    for d in (0, 16, 32, 48): shot(d, WEAPON_Z_KIND)
+    a.move_l_dispan_dn(0x14, 'a4', 'd3')
+    a.bsr_w('nova')
+    a.label('do_sup')
+    a.bsr_w('suptick')
     a.label('xyz_end')
-    a.movem_pop(pop_mask(['d0','d1','d2','d3','d4','d5','d6','d7',
-                          'a0','a1','a2','a3','a4','a5','a6']))
+    a.movem_pop(pop_mask(ALLR))
     a.rts()
 
-    # ====================== GAME MODE row on the options screen ==========
+    # ---- Hyper Beam: a line of rounds laid along the aim vector ----------
+    a.label('beam')
+    a.move_w_dn_absw('d3', G.HK_ANG)
+    a.move_l_dn_dm('d3', 'd0')
+    a.asl_l_imm(2, 'd0')
+    a.movea_l_imm(G.ANGLE_TBL_90, 'a0')
+    a.adda_l_dn('d0', 'a0')
+    a.move_l_ind_dn('a0', 'd1')               # X component of the aim vector
+    a.suba_l_imm(0x100, 'a0')
+    a.move_l_ind_dn('a0', 'd2')               # Y component
+    for src, dst in (('d1', G.HK_STEPX), ('d2', G.HK_STEPY)):
+        a.move_l_dn_dm(src, 'd0'); a.asl_l_imm(3, 'd0')
+        a.move_l_dn_dm(src, 'd5'); a.asl_l_imm(2, 'd5')
+        a.add_l_dn_dm('d5', 'd0')             # component * 12 pixels
+        a.move_l_dn_absw('d0', dst)
+    a.clr_l_absw(G.HK_OFSX)
+    a.clr_l_absw(G.HK_OFSY)
+    a.moveq(BEAM_SEGMENTS - 1, 'd7')
+    a.label('beam_lp')
+    a.moveq(0, 'd3'); a.move_w_absw_dn(G.HK_ANG, 'd3')
+    a.moveq(1, 'd2')
+    a.bsr_w('fireshot')
+    a.move_l_absw_dn(G.HK_STEPX, 'd0'); a.add_l_dn_absw('d0', G.HK_OFSX)
+    a.move_l_absw_dn(G.HK_STEPY, 'd0'); a.add_l_dn_absw('d0', G.HK_OFSY)
+    a.dbra('d7', 'beam_lp')
+    a.clr_l_absw(G.HK_OFSX)
+    a.clr_l_absw(G.HK_OFSY)
+    a.rts()
+
+    # ---- Nova: eight rounds spread over the whole circle -----------------
+    a.label('nova')
+    a.move_w_dn_absw('d3', G.HK_ANG)
+    a.clr_l_absw(G.HK_OFSX)
+    a.clr_l_absw(G.HK_OFSY)
+    a.moveq(NOVA_SHOTS - 1, 'd7')
+    a.label('nova_lp')
+    a.moveq(0, 'd3'); a.move_w_absw_dn(G.HK_ANG, 'd3')
+    a.moveq(1, 'd2')
+    a.bsr_w('fireshot')
+    a.moveq(0, 'd0'); a.move_w_absw_dn(G.HK_ANG, 'd0')
+    a.addi_l_dn(G.ANGLE_STEPS // NOVA_SHOTS, 'd0')
+    a.andi_l_dn(0xFF, 'd0')
+    a.move_w_dn_absw('d0', G.HK_ANG)
+    a.dbra('d7', 'nova_lp')
+    a.rts()
+
+    # ---- nearest live object -> d0 = angle, d1 = 1 when one was found ----
+    a.label('findtgt')
+    a.movem_push(push_mask(['d2','d3','d4','d5','d6','d7','a0','a1']))
+    a.moveq(0, 'd3')                          # best distance so far
+    a.moveq(0, 'd4'); a.moveq(0, 'd5')        # best dx, dy
+    a.movea_l_imm(G.OBJ_ARRAY, 'a0')
+    a.moveq(0x7F, 'd7')
+    a.label('ft_lp')
+    a.move_l_ind_dn('a0', 'd0')
+    a.beq_w('ft_next')
+    a.move_l_dispan_dn(G.OBJ_HP, 'a0', 'd0')
+    a.ble_w('ft_next')
+    a.move_l_dispan_dn(4, 'a0', 'd1'); a.sub_l_dispan_dn(4, 'a4', 'd1')
+    a.move_l_dispan_dn(8, 'a0', 'd2'); a.sub_l_dispan_dn(8, 'a4', 'd2')
+    a.move_l_dn_dm('d1', 'd0'); a.bpl_w('ft_px'); a.neg_l('d0')
+    a.label('ft_px')
+    a.move_l_dn_dm('d2', 'd6'); a.bpl_w('ft_py'); a.neg_l('d6')
+    a.label('ft_py')
+    a.add_l_dn_dm('d6', 'd0')                 # |dx| + |dy|
+    a.tst_l_dn('d3'); a.beq_w('ft_take')
+    a.cmp_l_dn_dn('d3', 'd0'); a.bge_w('ft_next')
+    a.label('ft_take')
+    a.move_l_dn_dm('d0', 'd3')
+    a.move_l_dn_dm('d1', 'd4')
+    a.move_l_dn_dm('d2', 'd5')
+    a.label('ft_next')
+    a.adda_l_imm(G.OBJ_STRIDE, 'a0')
+    a.dbra('d7', 'ft_lp')
+    a.tst_l_dn('d3'); a.beq_w('ft_none')
+    a.move_l_dn_dm('d4', 'd0')
+    a.move_l_dn_dm('d5', 'd1')
+    a.jsr_l(G.ATAN2)
+    a.moveq(1, 'd1')
+    a.bra_w('ft_end')
+    a.label('ft_none')
+    a.moveq(0, 'd0'); a.moveq(0, 'd1')
+    a.label('ft_end')
+    a.movem_pop(pop_mask(['d2','d3','d4','d5','d6','d7','a0','a1']))
+    a.rts()
+
+    # ---- support fire: flank guns that keep firing at the nearest target --
+    a.label('suptick')
+    a.tst_w_absw(G.HK_SUPPORT)
+    a.beq_w('sup_end')
+    a.subq_w_absw(1, G.HK_SUPPORT)
+    a.tst_w_absw(G.HK_SUPCD)
+    a.beq_w('sup_fire')
+    a.subq_w_absw(1, G.HK_SUPCD)
+    a.bra_w('sup_end')
+    a.label('sup_fire')
+    a.move_w_imm_absw(SUPPORT_RATE, G.HK_SUPCD)
+    a.bsr_w('findtgt')
+    a.tst_l_dn('d1')
+    a.beq_w('sup_end')
+    a.move_w_dn_absw('d0', G.HK_ANG)
+    a.addi_l_dn(G.ANGLE_STEPS // 4, 'd0')     # 90 degrees -> flank direction
+    a.andi_l_dn(0xFF, 'd0')
+    a.asl_l_imm(2, 'd0')
+    a.movea_l_imm(G.ANGLE_TBL_90, 'a0')
+    a.adda_l_dn('d0', 'a0')
+    a.move_l_ind_dn('a0', 'd1')
+    a.suba_l_imm(0x100, 'a0')
+    a.move_l_ind_dn('a0', 'd2')
+    a.asl_l_imm(3, 'd1'); a.asl_l_imm(3, 'd2')   # 8 pixels out to each side
+    a.move_l_dn_absw('d1', G.HK_OFSX)
+    a.move_l_dn_absw('d2', G.HK_OFSY)
+    for negate in (False, True):
+        if negate:
+            for v in (G.HK_OFSX, G.HK_OFSY):
+                a.move_l_absw_dn(v, 'd0'); a.neg_l('d0'); a.move_l_dn_absw('d0', v)
+        a.moveq(0, 'd3'); a.move_w_absw_dn(G.HK_ANG, 'd3')
+        a.moveq(1, 'd2')
+        a.bsr_w('fireshot')
+    a.clr_l_absw(G.HK_OFSX)
+    a.clr_l_absw(G.HK_OFSY)
+    a.label('sup_end')
+    a.rts()
+
+    # ================== extra rows on the options screen =================
     # Seeds the NG+ level when a game begins.  Replaces the
     # "move.b #$12,$FFF600" that both the CONTINUE and GAME START paths run.
     a.label('applyng')
@@ -203,71 +344,83 @@ def build_code(rom):
     a.move_w_absw_absw(G.OPT_NGPLUS, G.HK_NGPLUS)
     a.rts()
 
-    # Draw the value cell of the GAME MODE row.
-    a.label('ngval')
-    ALL = ['d0','d1','d2','d3','d4','d5','d6','d7','a0','a1','a2','a3','a4','a5','a6']
-    a.movem_push(push_mask(ALL))
-    a.move_l_imm_dn(G.OPT_CURSOR_VDP + 6 * 0x80 + 0x16, 'd0')   # value column
-    a.jsr_l(G.SET_VDP_ADDR)
-    a.moveq(0, 'd0')
-    a.move_w_absw_dn(G.OPT_NGPLUS, 'd0')
-    a.andi_l_dn(0x07, 'd0')
-    a.asl_l_imm(3, 'd0')                      # 8-byte records
-    a.movea_l_imm(0, 'a0')                    # patched below to str_vals
-    a.adda_l_dn('d0', 'a0')
-    a.jsr_l(G.DRAW_STRING)
-    a.movem_pop(pop_mask(ALL))
-    a.rts()
+    ALLR2 = ['d0','d1','d2','d3','d4','d5','d6','d7','a0','a1','a2','a3','a4','a5','a6']
 
-    # Draw the whole extra row.  Replaces "moveq #0,d7 / move.l #$C650,d0"
-    # at the tail of the option screen's draw code, so it must leave those
-    # two registers exactly as that code did.
+    def value_cell(label, row, var, table, limit):
+        """draw the value column of one added row"""
+        a.label(label)
+        a.movem_push(push_mask(ALLR2))
+        a.move_l_imm_dn(G.OPT_CURSOR_VDP + row * 0x80 + 0x16, 'd0')
+        a.jsr_l(G.SET_VDP_ADDR)
+        a.moveq(0, 'd0')
+        a.move_w_absw_dn(var, 'd0')
+        a.andi_l_dn(limit, 'd0')
+        a.asl_l_imm(3, 'd0')                  # 8-byte records
+        a.movea_l_imm(0, 'a0')                # patched below to `table`
+        a.adda_l_dn('d0', 'a0')
+        a.jsr_l(G.DRAW_STRING)
+        a.movem_pop(pop_mask(ALLR2))
+        a.rts()
+
+    value_cell('ngval', 6, G.OPT_NGPLUS, 'str_ngvals', 0x07)
+    value_cell('spval', 7, G.OPT_SPECIAL, 'str_spvals', 0x01)
+
+    # Draw both added rows.  Replaces "moveq #0,d7 / move.l #$C650,d0" at the
+    # tail of the option screen's draw code, so it must leave those two
+    # registers exactly as the instructions it replaced did.
     a.label('ngrow')
     SOME = ['d0','d1','d2','d3','d4','d5','d6','a0','a1','a2','a3','a4','a5','a6']
     a.movem_push(push_mask(SOME))
-    a.move_l_imm_dn(G.OPT_CURSOR_VDP + 6 * 0x80 + 2, 'd0')      # label column
-    a.jsr_l(G.SET_VDP_ADDR)
-    a.movea_l_imm(0, 'a0')                    # patched below to str_label
-    a.jsr_l(G.DRAW_STRING)
+    for row, lbl in ((6, 'str_gamemode'), (7, 'str_specials')):
+        a.move_l_imm_dn(G.OPT_CURSOR_VDP + row * 0x80 + 2, 'd0')
+        a.jsr_l(G.SET_VDP_ADDR)
+        a.movea_l_imm(0, 'a0')                # patched below to `lbl`
+        a.jsr_l(G.DRAW_STRING)
     a.bsr_w('ngval')
+    a.bsr_w('spval')
     a.movem_pop(pop_mask(SOME))
     a.moveq(0, 'd7')
     a.move_l_imm_dn(G.OPT_CURSOR_VDP, 'd0')
     a.rts()
 
-    # Row handler, reached through the relocated dispatch table.  Left/right
-    # move through NORMAL and NG+1..NG+7, mirroring how the RANK row works.
-    a.label('ngedit')
-    a.move_w_absw_dn(G.OPT_NGPLUS, 'd5')
-    a.move_b_absw_dn(0xF602, 'd0')
-    a.btst_imm_dn(2, 'd0')                    # LEFT (active low)
-    a.bne_w('ng_nl')
-    a.subq_w_absw(1, G.OPT_NGPLUS)
-    a.tst_w_absw(G.OPT_NGPLUS)
-    a.bge_w('ng_nl')
-    a.move_w_imm_absw(NGPLUS_MAX, G.OPT_NGPLUS)
-    a.label('ng_nl')
-    a.btst_imm_dn(3, 'd0')                    # RIGHT
-    a.bne_w('ng_nr')
-    a.addq_w_absw(1, G.OPT_NGPLUS)
-    a.cmpi_w_absw(NGPLUS_MAX, G.OPT_NGPLUS)
-    a.bls_w('ng_nr')
-    a.move_w_imm_absw(0, G.OPT_NGPLUS)
-    a.label('ng_nr')
-    a.cmp_w_absw_dn(G.OPT_NGPLUS, 'd5')
-    a.beq_w('ng_done')
-    a.move_w_absw_absw(G.OPT_NGPLUS, G.HK_NGPLUS)
-    a.bsr_w('ngval')
-    a.label('ng_done')
-    a.jmp_l(G.OPT_LOOP)
+    def row_handler(label, var, lo, hi, redraw, apply_live=False):
+        """left/right over a range, mirroring how the stock RANK row works"""
+        a.label(label)
+        a.move_w_absw_dn(var, 'd5')
+        a.move_b_absw_dn(0xF602, 'd0')
+        a.btst_imm_dn(2, 'd0')                # LEFT (active low)
+        a.bne_w(label + '_nl')
+        a.subq_w_absw(1, var)
+        a.tst_w_absw(var)
+        a.bge_w(label + '_nl')
+        a.move_w_imm_absw(hi, var)
+        a.label(label + '_nl')
+        a.btst_imm_dn(3, 'd0')                # RIGHT
+        a.bne_w(label + '_nr')
+        a.addq_w_absw(1, var)
+        a.cmpi_w_absw(hi, var)
+        a.bls_w(label + '_nr')
+        a.move_w_imm_absw(lo, var)
+        a.label(label + '_nr')
+        a.cmp_w_absw_dn(var, 'd5')
+        a.beq_w(label + '_done')
+        if apply_live:
+            a.move_w_absw_absw(var, G.HK_NGPLUS)
+        a.bsr_w(redraw)
+        a.label(label + '_done')
+        a.jmp_l(G.OPT_LOOP)
 
-    # fire one projectile: d2 = kind, d3 = angle (0..63), a4 = player struct.
-    # Argument layout copied from the stock call site at $97EC-$9820.
+    row_handler('ngedit', G.OPT_NGPLUS, 0, NGPLUS_MAX, 'ngval', apply_live=True)
+    row_handler('spedit', G.OPT_SPECIAL, 0, 1, 'spval')
+
+    # fire one projectile: d2 = kind, d3 = angle (0..255), a4 = player struct,
+    # muzzle displaced by $FFF664/$FFF668.  Argument layout copied from the
+    # stock call site at $97EC-$9820.  Note $9830 clobbers d0-d3.
     a.label('fireshot')
     a.movem_push(push_mask(['d4', 'd5', 'd6', 'd7', 'a0']))
     a.move_l_dn_dm('d3', 'd0')
     a.asl_l_imm(2, 'd0')
-    a.movea_l_imm(G.ANGLE_TBL_SIN, 'a0')
+    a.movea_l_imm(G.ANGLE_TBL_90, 'a0')
     a.adda_l_dn('d0', 'a0')
     a.move_l_ind_dn('a0', 'd5')
     a.suba_l_imm(0x100, 'a0')
@@ -280,9 +433,11 @@ def build_code(rom):
     a.move_l_dn_dm('d4', 'd0'); a.asr_l_imm(4, 'd0'); a.move_l_dn_push('d0')
     a.move_l_dn_dm('d5', 'd0'); a.asr_l_imm(4, 'd0'); a.move_l_dn_push('d0')
     a.move_l_dn_dm('d6', 'd0'); a.asl_l_imm(2, 'd0')
-    a.add_l_dispan_dn(8, 'a4', 'd0'); a.add_l_dn_dm('d4', 'd0'); a.move_l_dn_push('d0')
+    a.add_l_dispan_dn(8, 'a4', 'd0'); a.add_l_dn_dm('d4', 'd0')
+    a.add_l_absw_dn(G.HK_OFSY, 'd0'); a.move_l_dn_push('d0')
     a.move_l_dn_dm('d7', 'd0'); a.asl_l_imm(2, 'd0')
-    a.add_l_dispan_dn(4, 'a4', 'd0'); a.add_l_dn_dm('d5', 'd0'); a.move_l_dn_push('d0')
+    a.add_l_dispan_dn(4, 'a4', 'd0'); a.add_l_dn_dm('d5', 'd0')
+    a.add_l_absw_dn(G.HK_OFSX, 'd0'); a.move_l_dn_push('d0')
     a.move_l_dn_push('d2')                     # arg0 kind
     a.jsr_l(G.SPAWN_SHOT)
     a.lea_a7_off(0x20)
@@ -296,24 +451,32 @@ def build_code(rom):
     for t in rows[:6]:
         a.raw(struct.pack('>I', t))
     a.raw(b'\x00\x00\x00\x00')          # placeholder for 'ngedit'
-    a.raw(struct.pack('>I', rows[6]))     # EXIT
+    a.raw(b'\x00\x00\x00\x00')          # placeholder for 'spedit'
+    a.raw(struct.pack('>I', rows[6]))     # EXIT, still last
 
-    a.label('str_label')
-    a.raw(b'GAME MODE\x00')
-    a.label('str_vals')
+    a.label('str_gamemode'); a.raw(b'GAME MODE\x00')
+    a.label('str_specials'); a.raw(b'SPECIALS\x00')
+    a.label('str_ngvals')
     for i in range(8):
-        txt = b'NORMAL' if i == 0 else (b'NG+%d  ' % i)
+        a.raw((b'NORMAL' if i == 0 else b'NG+%d  ' % i) + b'\x00\x00')
+    a.label('str_spvals')
+    for txt in (b'X Y Z ', b'COMBO '):
         a.raw(txt + b'\x00\x00')
 
     code = bytearray(a.assemble())
     L = a.labels
     base = G.NEWCODE
-    # fill the placeholders that needed label addresses
     struct.pack_into('>I', code, L['opttbl'] + 24 - base, L['ngedit'])
-    for lbl, sym in (('ngval', 'str_vals'), ('ngrow', 'str_label')):
-        # patch the movea.l #0,a0 inside each routine
-        i = code.index(b'\x20\x7c\x00\x00\x00\x00', L[lbl] - base)
+    struct.pack_into('>I', code, L['opttbl'] + 28 - base, L['spedit'])
+    # fill every "movea.l #0,a0" placeholder, in the order they were emitted
+    order = [('ngval', 'str_ngvals'), ('spval', 'str_spvals'),
+             ('ngrow', 'str_gamemode'), ('ngrow', 'str_specials')]
+    cursor = 0
+    for lbl, sym in order:
+        start = max(cursor, L[lbl] - base)
+        i = code.index(b'\x20\x7c\x00\x00\x00\x00', start)
         struct.pack_into('>I', code, i + 2, L[sym])
+        cursor = i + 6
     return bytes(code), L
 
 
@@ -620,19 +783,33 @@ def main():
     # 4b. GAME MODE row on the options screen
     rom = bytearray(rom)
     #   cursor now wraps over eight rows instead of seven
-    rom[0x384B] = G.OPT_ROWS                       # moveq #7,d7 (wrap up)
-    struct.pack_into('>I', rom, 0x385A, G.OPT_ROWS)  # cmpi.l #7,d7 (wrap down)
+    rom[0x384B] = G.OPT_ROWS + 1                       # moveq #8,d7 (wrap up)
+    struct.pack_into('>I', rom, 0x385A, G.OPT_ROWS + 1)  # cmpi.l #8,d7
     #   relocate the row dispatch table: lea $3B84(pc),a0 + nop -> movea.l #tbl,a0
     struct.pack_into('>HI', rom, 0x38AC, 0x207C, labels['opttbl'])
-    #   EXIT moves one row down to make space
-    struct.pack_into('>I', rom, 0x3776, G.OPT_EXIT_VDP + 0x80)
+    #   EXIT moves two rows down to make space
+    struct.pack_into('>I', rom, 0x3776, G.OPT_EXIT_VDP + 0x100)
     #   draw the new row: moveq #0,d7 / move.l #$C650,d0 -> jsr ngrow + nop
     struct.pack_into('>HIH', rom, 0x37E2, 0x4EB9, labels['ngrow'], 0x4E71)
     #   seed the NG+ level when a game begins (CONTINUE and GAME START)
     for site in (G.GAME_START_1, G.GAME_START_2):
         struct.pack_into('>HIH', rom, site, 0x4EB9, labels['applyng'], 0x4E71)
     rom = bytes(rom)
-    print("options screen: GAME MODE row added (NORMAL, NG+1..NG+%d)" % NGPLUS_MAX)
+    print("options screen: GAME MODE (NORMAL, NG+1..NG+%d) and SPECIALS "
+          "(X Y Z / COMBO) rows added" % NGPLUS_MAX)
+
+    # 4c. enemies engage from further away
+    rom = bytearray(rom)
+    scaled = 0
+    for t in range(0x90):
+        off = G.OBJ_TEMPLATES + t * 32 + G.TPL_RANGE
+        r = G.be16(rom, off)
+        if 0 < r < AGGRO_CAP:
+            struct.pack_into('>H', rom, off, min(AGGRO_CAP, r * AGGRO_NUM // AGGRO_DEN))
+            scaled += 1
+    rom = bytes(rom)
+    print("enemies: activation radius raised x%g on %d object types"
+          % (AGGRO_NUM / AGGRO_DEN, scaled))
 
     # 5. a second boss on stage 1
     rom, info = place_second_boss(rom, 0)

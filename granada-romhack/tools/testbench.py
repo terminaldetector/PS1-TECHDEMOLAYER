@@ -39,7 +39,19 @@ def run_feature_tests(rom):
     check("ROM passes its own boot checksum and reaches the title",
           gr.rb(0xFFF600) == 0x06, "mode=%02X" % gr.rb(0xFFF600))
     check("New Game+ counter starts at 0", gr.rw(0xFFF658) == 0)
-    boot_to_stage(gr)
+
+    # The specials sit on X/Y/Z by default; this emulator only offers a
+    # 3-button pad, so switch the options screen to the A/B/C fallback and
+    # exercise the weapon logic through that.
+    tap(gr, 'START', gap=40); tap(gr, 'DOWN'); tap(gr, 'START', gap=60)
+    for _ in range(7):
+        tap(gr, 'DOWN')                      # cursor -> SPECIALS
+    tap(gr, 'RIGHT')
+    check("SPECIALS row switches to the 3-button fallback",
+          gr.rw(0xFFFE20) == 1, "value=%d" % gr.rw(0xFFFE20))
+    tap(gr, 'DOWN'); tap(gr, 'START', gap=60)        # EXIT
+    tap(gr, 'START', gap=90); gr.step(300)           # GAME START
+
     check("gameplay mode entered", gr.rb(0xFFF600) == 0x12)
     objs = live_objects(gr)
     bosses = [o for o in objs if o[1] == 0x25]
@@ -50,32 +62,50 @@ def run_feature_tests(rom):
     check("boss hit points unscaled on the first loop",
           all(b[2] == 0x40 for b in bosses), "hp=%s" % [b[2] for b in bosses])
 
-    # weapons, through the 3-button fallback binding
-    def volley(btns):
-        gr.press(); gr.step(100)
-        gr.press(*btns); gr.step(6)
-        peak = {}
-        for _ in range(25):
-            gr.step(2)
-            for k in set(projectile_kinds(gr)):
-                peak[k] = max(peak.get(k, 0), projectile_kinds(gr).count(k))
-        return peak
-    base = volley(('A',))
-    req_idle = gr.rb(0xFFF65C)
-    spread = volley(('A', 'B'))
-    req_x = gr.rb(0xFFF65C)
-    heavy = volley(('A', 'C'))
-    omni = volley(('B', 'C'))
-    check("weapon-request byte decodes A+B as the X weapon",
-          req_idle & 4 == 0 and req_x & 4 == 4,
-          "idle=%02X A+B=%02X" % (req_idle, req_x))
-    check("X / Spread Shot puts more rounds in the air than the stock gun",
-          spread.get(1, 0) > base.get(1, 0),
-          "stock=%d spread=%d" % (base.get(1, 0), spread.get(1, 0)))
-    check("Y / Heavy Shell spawns the engine's kind-2 projectile",
-          heavy.get(2, 0) > 0, "kind2=%d" % heavy.get(2, 0))
-    check("Z / Omni Burst fires without the stock trigger held",
-          omni.get(1, 0) > 0, "kind1=%d" % omni.get(1, 0))
+    def wait_ready(limit=600):
+        """the weapon code, like the stock fire routine, only runs while the
+        player state at $FFAB16 is 2 or less"""
+        for _ in range(limit):
+            if gr.rw(0xFFAB16) <= 2:
+                return True
+            gr.press(); gr.step(1)
+        return False
+
+    def volley(btns, frames=30):
+        gr.press(); gr.step(60); wait_ready()
+        gr.press(*btns); gr.step(4)
+        peak = 0
+        for _ in range(frames):
+            gr.step(2); peak = max(peak, len(projectile_kinds(gr)))
+        return peak, gr.rb(0xFFF65C)
+
+    stock, _ = volley(('A',))
+    beam, req_x = volley(('A', 'B'))
+    nova, _ = volley(('B', 'C'))
+    check("weapon-request byte decodes A+B as the X weapon", req_x & 4 == 4,
+          "req=%02X" % req_x)
+    check("X / Hyper Beam lays a column of rounds at once", beam >= 8,
+          "stock peak=%d, beam peak=%d" % (stock, beam))
+    check("Z / Nova puts a full ring in the air", nova >= 8,
+          "nova peak=%d" % nova)
+
+    gr.press(); gr.step(60)
+    check("player returns to an actionable state", wait_ready(),
+          "AB16=%d" % gr.rw(0xFFAB16))
+    gr.press('A', 'C'); gr.step(6)
+    gr.press(); gr.step(10)
+    armed = gr.rw(0xFFF65E)
+    check("Y / Support Fire arms a timed escort", armed > 200,
+          "frames armed=%d" % armed)
+    seen = 0
+    for _ in range(40):
+        gr.step(4)
+        seen = max(seen, len(projectile_kinds(gr)))
+    check("support fire keeps shooting with no button held", seen > 0,
+          "rounds seen after release=%d" % seen)
+    check("support charge is counting down", gr.rw(0xFFF65E) < armed,
+          "%d -> %d" % (armed, gr.rw(0xFFF65E)))
+
 
 def tap(gr, *btns, hold=6, gap=16):
     gr.press(*btns); gr.step(hold)
@@ -108,7 +138,7 @@ def run_options_test(rom):
     check("stock row 1 (RANK) still responds", gr.rw(0xFFFE06) != stock1,
           "%d -> %d" % (stock1, gr.rw(0xFFFE06)))
 
-    # down to the new row (cursor is on row 1 now)
+    # down to GAME MODE (cursor is on row 1 now)
     for _ in range(5):
         tap(gr, 'DOWN')
     tap(gr, 'RIGHT')
@@ -123,7 +153,7 @@ def run_options_test(rom):
     while gr.rw(0xFFFE1E) != 3:
         tap(gr, 'RIGHT' if gr.rw(0xFFFE1E) < 3 else 'LEFT')
 
-    tap(gr, 'DOWN')                          # EXIT is now the last row
+    tap(gr, 'DOWN'); tap(gr, 'DOWN')         # past SPECIALS to EXIT
     tap(gr, 'START', gap=60)
     check("EXIT returns to the title menu", gr.rb(0xFFF600) == 0x06)
     tap(gr, 'START', gap=90)

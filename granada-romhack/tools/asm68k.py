@@ -215,3 +215,53 @@ def _extend3(cls):
     for f in (bge_w, blt_w, move_w_absw_absw):
         setattr(cls, f.__name__, f)
 _extend3(Asm)
+
+def _extend4(cls):
+    def add_l_absw_dn(self, addr, dn):       # add.l $addr.w,dn
+        return self.raw(_w(0xD0B8 | (D[dn] << 9)) + _w(addr))
+    def add_l_dn_absw(self, dn, addr):       # add.l dn,$addr.w
+        return self.raw(_w(0xD1B8 | (D[dn] << 9)) + _w(addr))
+    def move_l_absw_dn(self, addr, dn):      # move.l $addr.w,dn
+        return self.raw(_w(0x2038 | (D[dn] << 9)) + _w(addr))
+    def move_l_dn_absw(self, dn, addr):      # move.l dn,$addr.w
+        return self.raw(_w(0x21C0 | D[dn]) + _w(addr))
+    def clr_l_absw(self, addr):              # clr.l $addr.w
+        return self.raw(b'\x42\xb8' + _w(addr))
+    def sub_l_dn_dm(self, src, dst):         # sub.l dsrc,ddst
+        return self.raw(_w(0x9080 | (D[dst] << 9) | D[src]))
+    def move_l_dispan_dn_a(self, off, an, dn):
+        return self.move_l_dispan_dn(off, an, dn)
+    def tst_l_dn(self, dn):                  # tst.l dn
+        return self.raw(_w(0x4A80 | D[dn]))
+    def bpl_w(self, t):  return self._branch(0x6A, t)
+    def bmi_w(self, t):  return self._branch(0x6B, t)
+    def ble_w(self, t):  return self._branch(0x6F, t)
+    def bgt_w(self, t):  return self._branch(0x6E, t)
+    def adda_l_imm(self, imm, an):           # adda.l #imm,an
+        return self.raw(_w(0xD1FC | (A[an] << 9)) + _l(imm))
+    def movea_l_ind_an(self, src, dst):      # movea.l (asrc),adst
+        return self.raw(_w(0x2050 | (A[dst] << 9) | A[src]))
+    def move_l_ind_an_dn(self, an, dn):      # move.l (an),dn
+        return self.move_l_ind_dn(an, dn)
+    def subq_w_dn(self, imm, dn):            # subq.w #imm,dn
+        return self.raw(_w(0x5140 | ((imm & 7) << 9) | D[dn]))
+    def dbra(self, dn, t):                   # dbra dn,target
+        def fn(L, pc):
+            disp = (L[t] if isinstance(t, str) else t) - (pc + 2)
+            assert -32768 <= disp <= 32767
+            return _w(0x51C8 | D[dn]) + _w(disp)
+        self._add(4, fn); return self
+    for f in (add_l_absw_dn, add_l_dn_absw, move_l_absw_dn, move_l_dn_absw,
+              clr_l_absw, sub_l_dn_dm, tst_l_dn, bpl_w, bmi_w, ble_w, bgt_w,
+              adda_l_imm, movea_l_ind_an, subq_w_dn, dbra):
+        setattr(cls, f.__name__, f)
+_extend4(Asm)
+
+def _extend5(cls):
+    def cmp_l_dn_dn(self, src, dst):         # cmp.l dsrc,ddst
+        return self.raw(_w(0xB080 | (D[dst] << 9) | D[src]))
+    def sub_l_dispan_dn(self, off, an, dn):  # sub.l off(an),dn
+        return self.raw(_w(0x90A8 | (D[dn] << 9) | A[an]) + _w(off))
+    for f in (cmp_l_dn_dn, sub_l_dispan_dn):
+        setattr(cls, f.__name__, f)
+_extend5(Asm)
