@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,11 +36,24 @@ import com.metro.opticalshell.display.DisplayExperimentRepository
 import com.metro.opticalshell.display.DisplayMath
 import com.metro.opticalshell.display.DisplayMetricsReader
 import com.metro.opticalshell.display.NoPrivilegeDisplayBridge
+import com.metro.opticalshell.capability.CapabilityGate
 import com.metro.opticalshell.expanded.DesktopMetroScreen
+import com.metro.opticalshell.gesture.rememberGestureGeometry
+import com.metro.opticalshell.metro.FolderContents
+import com.metro.opticalshell.panels.MetroActionCenter
+import com.metro.opticalshell.panels.MetroTopBar
+import com.metro.opticalshell.panels.MetroNotificationListener
+import com.metro.opticalshell.panels.NotificationAccess
+import com.metro.opticalshell.panels.PublicIntentPanelsAdapter
+import com.metro.opticalshell.panels.TaskObservation
 import com.metro.opticalshell.expanded.TabletMetroScreen
 import com.metro.opticalshell.mobile.MobileMetroScreen
 import com.metro.opticalshell.optical.CalibrationScreen
 import com.metro.opticalshell.optical.SafeViewport
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.ui.graphics.Color as ComposeColor
 import com.metro.opticalshell.runtime.FreeformLaunchAdapter
 import com.metro.opticalshell.ui.MetroTheme
 import com.metro.opticalshell.ui.SettingsScreen
@@ -60,6 +75,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var freeformAdapter: FreeformLaunchAdapter
     private lateinit var displayController: DisplayAdaptationController
+    private lateinit var panelsAdapter: PublicIntentPanelsAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,6 +84,7 @@ class MainActivity : ComponentActivity() {
         val app = application as ShellApplication
 
         freeformAdapter = FreeformLaunchAdapter(this, app.appLauncher)
+        panelsAdapter = PublicIntentPanelsAdapter(this)
 
         val readout = DisplayMetricsReader.read(this)
         val experimentRepo = DisplayExperimentRepository(this)
@@ -109,6 +126,38 @@ class MainActivity : ComponentActivity() {
 
         var route by remember { mutableStateOf(ShellRoute.SHELL) }
         var report by remember { mutableStateOf<CapabilityReport?>(null) }
+        var actionCenterOpen by remember { mutableStateOf(false) }
+
+        // Persistable read access, so the chosen wallpaper survives a reboot.
+        val pickWallpaper = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            uri?.let {
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        it,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                }
+                vm.setStartBackground(vm.startBackground.value.copy(imageUri = it.toString()))
+            }
+        }
+
+        // OP02 visual state
+        val backgroundMode by vm.backgroundMode.collectAsState()
+        val startBackground by vm.startBackground.collectAsState()
+        val surfaceTiles by vm.startSurfaceTiles.collectAsState()
+        val visualPreset by vm.visualPreset.collectAsState()
+        val tileAnimation by vm.tileAnimation.collectAsState()
+        val notifications by MetroNotificationListener.notifications.collectAsState()
+        val notificationAccess = remember(route, actionCenterOpen) {
+            NotificationAccess.isGranted(this@MainActivity)
+        }
+
+        // Gesture geometry drives the exclusion contract (TZ 7.2). The IME
+        // flag matters: while a keyboard is up the shell claims nothing.
+        val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+        val gestureGeometry = rememberGestureGeometry(imeVisible = imeBottom.value > 0f)
 
         val configuration = LocalConfiguration.current
         val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -164,6 +213,15 @@ class MainActivity : ComponentActivity() {
                             onAutoExpandChange = {
                                 vm.dispatch(ShellEvent.SetAutoExpandOnPointer(it))
                             },
+                            visualPreset = visualPreset,
+                            backgroundMode = backgroundMode,
+                            startBackground = startBackground,
+                            tileAnimation = tileAnimation,
+                            onPresetChange = vm::setVisualPreset,
+                            onBackgroundModeChange = vm::setBackgroundMode,
+                            onStartBackgroundChange = vm::setStartBackground,
+                            onPickWallpaper = { pickWallpaper.launch(arrayOf("image/*")) },
+                            onTileAnimationChange = vm::setTileAnimation,
                             onOpenCalibration = { route = ShellRoute.CALIBRATION },
                             onOpenDiagnostics = { route = ShellRoute.DIAGNOSTICS },
                             onExportTiles = { copyToClipboard("metro-tiles.json", vm.exportTiles()) },
@@ -204,6 +262,35 @@ class MainActivity : ComponentActivity() {
                         }
 
                         ShellRoute.SHELL -> {
+                            // Resolves a Start-surface tile to its folder, or null.
+                            val folderOf: (String) -> FolderContents? = { tileId ->
+                                vm.folderGroupIdOf(tileId)?.let { groupId ->
+                                    FolderContents(
+                                        groupId = groupId,
+                                        name = vm.folderName(groupId),
+                                        tiles = vm.folderTiles(groupId),
+                                        previewAccents = vm.folderPreviewAccents(groupId)
+                                            .map { ComposeColor(it) },
+                                        onRename = { vm.renameFolder(groupId, it) },
+                                        onRemoveTile = { vm.removeFromFolder(it) },
+                                        onDissolve = { vm.dissolveFolder(groupId) },
+                                    )
+                                }
+                            }
+
+                            val topBar: @Composable () -> Unit = {
+                                MetroTopBar(
+                                    // Null when access is absent, so no badge is
+                                    // shown rather than a fabricated zero (TZ 3.3).
+                                    notificationCount = if (notificationAccess) {
+                                        notifications.values.sumOf { it.count }
+                                    } else {
+                                        null
+                                    },
+                                    onOpenActionCenter = { actionCenterOpen = true },
+                                )
+                            }
+
                             val columns = OrientationPolicy.tileColumnsFor(
                                 presentation = state.presentation,
                                 widthDp = configuration.screenWidthDp,
@@ -233,6 +320,14 @@ class MainActivity : ComponentActivity() {
                                     onOpenSettings = { route = ShellRoute.SETTINGS },
                                     onOpenDiagnostics = { route = ShellRoute.DIAGNOSTICS },
                                     onDismissHint = { vm.dispatch(ShellEvent.DismissExpandedHint) },
+                                    background = startBackground,
+                                    backgroundMode = backgroundMode,
+                                    gestureGeometry = gestureGeometry,
+                                    densityDpi = report?.readout?.densityDpi ?: 420,
+                                    topBar = topBar,
+                                    folderOf = folderOf,
+                                    onCreateFolder = vm::createFolderByDrop,
+                                    surfaceTiles = surfaceTiles,
                                 )
 
                                 Presentation.EXPANDED_PORTRAIT -> TabletMetroScreen(
@@ -259,6 +354,14 @@ class MainActivity : ComponentActivity() {
                                     onToggleEnvironment = { vm.dispatch(ShellEvent.ToggleEnvironment) },
                                     onOpenSettings = { route = ShellRoute.SETTINGS },
                                     onOpenDiagnostics = { route = ShellRoute.DIAGNOSTICS },
+                                    background = startBackground,
+                                    backgroundMode = backgroundMode,
+                                    gestureGeometry = gestureGeometry,
+                                    densityDpi = report?.readout?.densityDpi ?: 420,
+                                    topBar = topBar,
+                                    folderOf = folderOf,
+                                    onCreateFolder = vm::createFolderByDrop,
+                                    surfaceTiles = surfaceTiles,
                                 )
 
                                 Presentation.EXPANDED_LANDSCAPE -> DesktopMetroScreen(
@@ -296,6 +399,47 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+
+                // The Action Center sits above every presentation (TZ 6.1).
+                MetroActionCenter(
+                    visible = actionCenterOpen,
+                    notificationAccessGranted = notificationAccess,
+                    notifications = notifications.values.sortedByDescending { it.count },
+                    labelFor = { pkg ->
+                        vm.apps.value.firstOrNull { it.packageName == pkg }?.label ?: pkg
+                    },
+                    panelStatus = buildString {
+                        append("Recents defers to the system: ")
+                        append(
+                            TaskObservation.recentsShouldDeferToSystem(
+                                CapabilityGate.HeldPrivileges(
+                                    hasNotificationAccess = notificationAccess,
+                                ),
+                            ),
+                        )
+                        append(". ")
+                        append(
+                            "The shell cannot replace the status bar or draw its own " +
+                                "Recents; those need platform permissions.",
+                        )
+                    },
+                    onRequestNotificationAccess = {
+                        runCatching { startActivity(NotificationAccess.consentIntent()) }
+                    },
+                    onOpenSystemShade = {
+                        panelsAdapter.openNotifications()
+                        actionCenterOpen = false
+                    },
+                    onOpenSystemQuickSettings = {
+                        panelsAdapter.openQuickSettings()
+                        actionCenterOpen = false
+                    },
+                    onOpenShellSettings = {
+                        actionCenterOpen = false
+                        route = ShellRoute.SETTINGS
+                    },
+                    onDismiss = { actionCenterOpen = false },
+                )
             }
         }
     }

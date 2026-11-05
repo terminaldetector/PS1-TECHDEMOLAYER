@@ -28,6 +28,11 @@ import com.metro.opticalshell.core.ShellEnvironment
 import com.metro.opticalshell.core.ShellState
 import com.metro.opticalshell.data.AppearancePreferences
 import com.metro.opticalshell.expanded.TaskbarConfiguration
+import com.metro.opticalshell.metro.StartBackground
+import com.metro.opticalshell.metro.TileAnimationPolicy
+import com.metro.opticalshell.metro.TileAnimationStyle
+import com.metro.opticalshell.metro.TileBackgroundMode
+import com.metro.opticalshell.metro.VisualPreset
 
 /**
  * Shell settings (TZ section 7).
@@ -46,11 +51,20 @@ fun SettingsScreen(
     onEnvironmentChange: (ShellEnvironment) -> Unit,
     onMobileLandscapePolicyChange: (MobileLandscapePolicy) -> Unit,
     onAutoExpandChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    visualPreset: VisualPreset = VisualPreset.WP8_CLASSIC,
+    backgroundMode: TileBackgroundMode = TileBackgroundMode.SOLID_ACCENT,
+    startBackground: StartBackground = StartBackground(),
+    tileAnimation: TileAnimationPolicy = TileAnimationPolicy(),
+    onPresetChange: (VisualPreset) -> Unit = {},
+    onBackgroundModeChange: (TileBackgroundMode) -> Unit = {},
+    onStartBackgroundChange: (StartBackground) -> Unit = {},
+    onPickWallpaper: () -> Unit = {},
+    onTileAnimationChange: (TileAnimationPolicy) -> Unit = {},
     onOpenCalibration: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onExportTiles: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val accent = Color(appearance.accentArgb)
 
@@ -109,6 +123,121 @@ fun SettingsScreen(
         )
         Text(
             text = "Off by default, as required. The manual switch is always available.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MetroColors.Dim,
+        )
+
+        // ---- OP02 3.2: presets and the Start Background ----
+        Head("visual preset")
+        Row(modifier = Modifier.padding(vertical = 6.dp)) {
+            VisualPreset.entries.forEach { preset ->
+                Chip(
+                    label = when (preset) {
+                        VisualPreset.WP8_CLASSIC -> "WP8"
+                        VisualPreset.WP81_TRANSPARENT -> "WP8.1"
+                        VisualPreset.METRO_EXPANDED -> "expanded"
+                    },
+                    selected = visualPreset == preset,
+                    accent = accent,
+                    onClick = { onPresetChange(preset) },
+                )
+            }
+        }
+        Text(
+            text = "WP8 had opaque accent tiles and no Start Background; the shared " +
+                "background behind transparent tiles arrived in 8.1. \"Expanded\" is " +
+                "ours, not a Windows Phone release.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MetroColors.Dim,
+        )
+
+        Head("tile background")
+        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+            TileBackgroundMode.entries.forEach { mode ->
+                Row(modifier = Modifier.padding(vertical = 3.dp)) {
+                    Chip(
+                        label = when (mode) {
+                            TileBackgroundMode.SOLID_ACCENT -> "solid accent"
+                            TileBackgroundMode.WP81_IMAGE_MASK -> "WP8.1 image mask"
+                            TileBackgroundMode.TRANSLUCENT_ACCENT -> "translucent (ours)"
+                            TileBackgroundMode.PHOTO_TILE -> "per-tile photo"
+                            TileBackgroundMode.PURE_BLACK_OPTICAL -> "pure black (optical)"
+                        },
+                        selected = backgroundMode == mode,
+                        accent = accent,
+                        onClick = { onBackgroundModeChange(mode) },
+                    )
+                }
+            }
+        }
+
+        if (backgroundMode == TileBackgroundMode.WP81_IMAGE_MASK) {
+            Action(
+                if (startBackground.imageUri == null) "choose a Start Background" else "change image",
+                accent,
+                onPickWallpaper,
+            )
+            if (startBackground.imageUri != null) {
+                SliderRow("zoom", startBackground.scale, StartBackground.MIN_SCALE, StartBackground.MAX_SCALE) {
+                    onStartBackgroundChange(startBackground.copy(scale = it))
+                }
+                SliderRow("pan X", startBackground.offsetXFraction, -1f, 1f) {
+                    onStartBackgroundChange(startBackground.copy(offsetXFraction = it))
+                }
+                SliderRow("pan Y", startBackground.offsetYFraction, -1f, 1f) {
+                    onStartBackgroundChange(startBackground.copy(offsetYFraction = it))
+                }
+                SliderRow("dim", startBackground.dimFraction, 0f, 0.8f) {
+                    onStartBackgroundChange(startBackground.copy(dimFraction = it))
+                }
+                Toggle(
+                    label = "contrast scrim behind tile labels",
+                    checked = startBackground.labelScrim,
+                    onCheckedChange = { onStartBackgroundChange(startBackground.copy(labelScrim = it)) },
+                )
+            }
+            Text(
+                text = "One image, one crop. Every transparent tile samples the same " +
+                    "picture in the same coordinate space, so it lines up across " +
+                    "neighbouring tiles; the gaps between tiles stay black.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MetroColors.Dim,
+            )
+        }
+
+        // ---- OP02 3.3: tile animation ----
+        Head("live tile animation")
+        Row(modifier = Modifier.padding(vertical = 6.dp)) {
+            TileAnimationStyle.entries.forEach { style ->
+                Chip(
+                    label = style.name.lowercase(),
+                    selected = tileAnimation.style == style,
+                    accent = accent,
+                    onClick = { onTileAnimationChange(tileAnimation.copy(style = style)) },
+                )
+            }
+        }
+        if (tileAnimation.style != TileAnimationStyle.NONE) {
+            SliderRow(
+                "interval (seconds)",
+                tileAnimation.intervalSeconds.toFloat(),
+                TileAnimationPolicy.MIN_INTERVAL.toFloat(),
+                TileAnimationPolicy.MAX_INTERVAL.toFloat(),
+            ) { onTileAnimationChange(tileAnimation.copy(intervalSeconds = it.toInt())) }
+            Toggle(
+                label = "pause in battery saver",
+                checked = tileAnimation.respectPowerSaver,
+                onCheckedChange = { onTileAnimationChange(tileAnimation.copy(respectPowerSaver = it)) },
+            )
+            Toggle(
+                label = "respect reduced motion",
+                checked = tileAnimation.respectReducedMotion,
+                onCheckedChange = { onTileAnimationChange(tileAnimation.copy(respectReducedMotion = it)) },
+            )
+        }
+        Text(
+            text = "Animations stop when a tile is off screen, the screen is off, or " +
+                "the shell is in the background. There is no background service.",
             style = MaterialTheme.typography.bodyMedium,
             color = MetroColors.Dim,
         )

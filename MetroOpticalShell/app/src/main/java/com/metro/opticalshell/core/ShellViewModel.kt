@@ -12,7 +12,13 @@ import com.metro.opticalshell.data.WorkspaceRepository
 import com.metro.opticalshell.expanded.ExpandedWorkspace
 import com.metro.opticalshell.expanded.ExpandedWorkspaceState
 import com.metro.opticalshell.expanded.TaskbarConfiguration
+import com.metro.opticalshell.metro.FolderOps
+import com.metro.opticalshell.metro.StartBackground
+import com.metro.opticalshell.metro.TileAnimationPolicy
+import com.metro.opticalshell.metro.TileBackgroundMode
 import com.metro.opticalshell.metro.TileSize
+import com.metro.opticalshell.metro.TileSpec
+import com.metro.opticalshell.metro.VisualPreset
 import com.metro.opticalshell.optical.OpticalProfile
 import com.metro.opticalshell.optical.OpticalProfileSet
 import com.metro.opticalshell.runtime.InstalledApp
@@ -97,6 +103,32 @@ class ShellViewModel(
             prefix + rest
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // ---- OP02 visual state ----
+
+    val visualPreset: StateFlow<VisualPreset> = settings.visualPreset
+        .stateIn(viewModelScope, SharingStarted.Eagerly, VisualPreset.WP8_CLASSIC)
+
+    val backgroundMode: StateFlow<TileBackgroundMode> = settings.backgroundMode
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            VisualPreset.WP8_CLASSIC.defaultBackgroundMode,
+        )
+
+    val startBackground: StateFlow<StartBackground> = settings.startBackground
+        .stateIn(viewModelScope, SharingStarted.Eagerly, StartBackground())
+
+    val tileAnimation: StateFlow<TileAnimationPolicy> = settings.tileAnimation
+        .stateIn(viewModelScope, SharingStarted.Eagerly, TileAnimationPolicy())
+
+    /**
+     * Tiles as the Start surface should show them: loose tiles plus one
+     * representative per folder (TZ §3.4).
+     */
+    val startSurfaceTiles: StateFlow<List<TileSpec>> = collection
+        .map { FolderOps.startSurfaceTiles(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _lastLaunch = MutableStateFlow<LaunchOutcome?>(null)
     val lastLaunch: StateFlow<LaunchOutcome?> = _lastLaunch.asStateFlow()
@@ -301,6 +333,62 @@ class ShellViewModel(
         viewModelScope.launch { tiles.save(parsed) }
         return true
     }
+
+    // ---- OP02 visual setters ----
+
+    fun setVisualPreset(preset: VisualPreset) = viewModelScope.launch {
+        settings.persistPreset(preset)
+    }
+
+    fun setBackgroundMode(mode: TileBackgroundMode) = viewModelScope.launch {
+        settings.persistBackgroundMode(mode)
+    }
+
+    fun setStartBackground(background: StartBackground) = viewModelScope.launch {
+        settings.persist(background)
+    }
+
+    fun setTileAnimation(policy: TileAnimationPolicy) = viewModelScope.launch {
+        settings.persist(policy)
+    }
+
+    // ---- OP02 Live Folders (TZ §3.4) ----
+
+    fun createFolderByDrop(draggedTileId: String, targetTileId: String) = viewModelScope.launch {
+        tiles.mutate {
+            FolderOps.createByDrop(
+                collection = it,
+                draggedTileId = draggedTileId,
+                targetTileId = targetTileId,
+                nowMillis = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    fun renameFolder(groupId: String, name: String) = viewModelScope.launch {
+        tiles.mutate { FolderOps.rename(it, groupId, name) }
+    }
+
+    fun removeFromFolder(tileId: String) = viewModelScope.launch {
+        tiles.mutate { FolderOps.removeFromFolder(it, tileId) }
+    }
+
+    fun dissolveFolder(groupId: String) = viewModelScope.launch {
+        tiles.mutate { FolderOps.dissolve(it, groupId) }
+    }
+
+    /** Folder membership for a Start-surface tile, or null when it is an app. */
+    fun folderGroupIdOf(tileId: String): String? = FolderOps.groupIdOf(tileId)
+
+    fun folderTiles(groupId: String): List<TileSpec> =
+        FolderOps.tilesIn(collection.value, groupId)
+
+    fun folderName(groupId: String): String =
+        collection.value.groups.firstOrNull { it.groupId == groupId }?.name ?: "folder"
+
+    fun folderPreviewAccents(groupId: String): List<Int> =
+        FolderOps.previewTiles(collection.value, groupId)
+            .map { it.accentArgb ?: appearance.value.accentArgb }
 
     class Factory(
         private val settings: SettingsRepository,

@@ -13,12 +13,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,6 +42,7 @@ import androidx.core.graphics.drawable.toBitmap
 import com.metro.opticalshell.runtime.InstalledApp
 import com.metro.opticalshell.ui.LocalAccent
 import com.metro.opticalshell.ui.MetroColors
+import kotlinx.coroutines.launch
 
 /**
  * The WP8 "all apps" list: alphabetical, with letter headers and search
@@ -55,11 +63,12 @@ fun MetroAppList(
 ) {
     val accent = LocalAccent.current
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    var jumpOpen by remember { mutableStateOf(false) }
 
-    // Group into letter buckets once per list, not per frame (TZ 12).
-    val grouped = remember(apps) {
-        apps.groupBy { it.indexLetter }.toSortedMap()
-    }
+    // Buckets and header row indices, computed once per list (TZ 12).
+    val grouped = remember(apps) { JumpList.groupedInOrder(apps) }
+    val jumpTargets = remember(apps) { JumpList.jumpGrid(apps) }
 
     Column(modifier = modifier.fillMaxSize()) {
         MetroSearchField(
@@ -84,7 +93,9 @@ fun MetroAppList(
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             if (query.isBlank()) {
                 grouped.forEach { (letter, bucket) ->
-                    item(key = "hdr-$letter") { LetterHeader(letter, accent) }
+                    item(key = "hdr-$letter") {
+                        LetterHeader(letter, accent) { jumpOpen = true }
+                    }
                     items(bucket, key = { "${it.packageName}/${it.activityName}" }) { app ->
                         AppRow(app, iconFor(app), onLaunch, onLongPress)
                     }
@@ -96,15 +107,74 @@ fun MetroAppList(
             }
         }
     }
+
+    // The WP jump list: the whole alphabet, empty letters greyed rather than
+    // hidden, so the grid never reflows as apps are installed (TZ 3.5).
+    if (jumpOpen) {
+        JumpGrid(
+            targets = jumpTargets,
+            accent = accent,
+            onPick = { target ->
+                jumpOpen = false
+                target.scrollIndex?.let { index ->
+                    scope.launch { listState.animateScrollToItem(index) }
+                }
+            },
+            onDismiss = { jumpOpen = false },
+        )
+    }
 }
 
 @Composable
-private fun LetterHeader(letter: Char, accent: Color) {
+private fun JumpGrid(
+    targets: List<JumpTarget>,
+    accent: Color,
+    onPick: (JumpTarget) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xF2000000))
+            .clickable(onClickLabel = "Close jump list", onClick = onDismiss),
+        contentAlignment = Alignment.Center,
+    ) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            modifier = Modifier.padding(24.dp),
+        ) {
+            items(targets, key = { it.letter }) { target ->
+                Box(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .size(64.dp)
+                        .background(if (target.enabled) accent else Color(0xFF1C1C1C))
+                        .clickable(
+                            enabled = target.enabled,
+                            onClickLabel = "Jump to ${target.letter}",
+                        ) { onPick(target) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = target.letter.toString(),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Light,
+                        color = if (target.enabled) MetroColors.White else Color(0xFF555555),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LetterHeader(letter: Char, accent: Color, onClick: () -> Unit = {}) {
     Box(
         modifier = Modifier
             .padding(start = 16.dp, top = 18.dp, bottom = 6.dp)
             .size(36.dp)
-            .background(accent),
+            .background(accent)
+            .clickable(onClickLabel = "Jump to letter") { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Text(

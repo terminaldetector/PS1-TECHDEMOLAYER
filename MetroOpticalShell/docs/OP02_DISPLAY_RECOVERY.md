@@ -39,14 +39,15 @@ with `clearForcedDisplayDensityForUser` for the reset. Three consequences:
 | Verify by re-measuring rather than assuming | ✅ implemented and tested |
 | Report `NOT_OBSERVED` when the measurement disagrees | ✅ implemented and tested |
 | Host-side tool that records, applies and verifies | ✅ written, syntax-checked, **never executed** |
-| **Preview the new geometry before applying it** | ❌ **missing** — TZ §5.5.4 |
-| **Automatic restore on crash-loop** | ❌ **missing** — TZ §5.5.7 |
-| **Debounce / recursion guard on profile switching** | ❌ **missing** — TZ §5.6 |
+| **Preview the new geometry before applying it** | ✅ implemented and tested (`DisplayProfileManager.preview`) |
+| **Automatic restore on crash-loop** | ⚠️ `CrashLoopGuard` disables our own display-profile feature after two failures; it does **not** restore system density, which still needs the operator |
+| **Debounce / recursion guard on profile switching** | ✅ implemented and tested (`OrientationDebouncer`) |
 | **Per-display recovery** | ❌ **missing** — found via Taskbar, not yet handled |
 
-Four gaps, named rather than glossed. The first is the most user-visible: TZ
-§5.5.4 wants the new geometry previewed inside the shell *before* the global
-switch, and that is not built.
+One gap remains fully open — per-display recovery — and one is partial: the
+crash-loop guard switches our own feature off but cannot put the system's
+density back, because at Tier 0 the shell cannot write it in the first place.
+That asymmetry is inherent, not an oversight.
 
 ## Manual recovery, unchanged
 

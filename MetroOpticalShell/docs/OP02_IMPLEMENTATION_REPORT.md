@@ -45,7 +45,7 @@ means *detection*, not *enabling* — precisely as TZ §8.4 warned.
 
 ## 2. Code delivered
 
-**135 unit tests, 0 failures** (86 → 135, +49). Clean `assembleDebug`, APK ~11.3 MB.
+**214 unit tests, 0 failures** (86 → 135 → 214, +128 over OP01). Clean `assembleDebug`, lint 0 errors, APK ~11.3 MB.
 
 ### `CapabilityGate` (§2) — `IMPLEMENTED`, `TESTED` (15 tests)
 
@@ -106,36 +106,137 @@ both.
 
 ---
 
-## 3. What was NOT built
+## 3. Second pass: the rest of the implementable spec
 
-Stated plainly, because §13 forbids calling a pretty screen complete.
+Everything below was built after the first pass, in one run.
+
+### Gestures (§7, P0 — the blocking criterion) — `IMPLEMENTED`, `TESTED` (12 tests)
+
+`GesturePriorityContract` encodes the §7.2 priority order as arithmetic:
+
+```
+system mandatory > accessibility/security > system bars >
+shell navigation > tile interactions > decorative
+```
+
+What the tests pin, and why each matters:
+
+- **Nothing is claimed while the IME is up.** The user needs Back more than the
+  shell needs a swipe.
+- **Claims never reach into the mandatory strip.** Ask for the whole screen and
+  the result is clipped above the home/recents region.
+- **The total claim never exceeds the platform's 200dp per-edge cap.** Rather
+  than hand Android rects it would silently drop, the budget is allocated
+  explicitly, highest priority first — a test proves a `DECORATIVE` request
+  loses to a `SHELL_NAVIGATION` one when the budget is tight.
+- **Only tile surfaces may claim a horizontal swipe.** The desktop opens Start
+  with a button, so claiming edge swipes there would fight Back for nothing.
+- **An OEM downgrade is reported, not masked.** `NavigationStatus` distinguishes
+  "this device is on buttons anyway" from "we took Home and gestures vanished";
+  the latter is `isBlocking` and its message tells the user how to revert.
+
+Exclusion rects are installed in a `DisposableEffect` and cleared on dispose, so
+a stale exclusion cannot outlive its screen and quietly keep stealing Back.
+Predictive back uses the AndroidX `BackHandler`, and is disabled whenever the
+shell has nothing to consume so Back always falls through to the system.
+
+**Lint caught a real bug here**: `setSystemGestureExclusionRects` is API 29 but
+`minSdk` is 26, so this would have crashed on Android 8–9. Now guarded.
+
+### Start ↔ All Apps swipe and jump list (§3.5, P0) — `IMPLEMENTED`, `TESTED` (7 tests)
+
+The classic horizontal pager, with paging disabled in edit mode so a tile drag
+cannot also flip the page. The jump list shows the **whole** alphabet with empty
+letters greyed rather than hidden, as WP did, so the grid never reflows as apps
+are installed; `#` sorts last.
+
+### Live Folders (§3.4) — `IMPLEMENTED`, `TESTED` (12 tests)
+
+Drag a tile squarely onto another to create a folder — the inner-60% test is
+what separates "onto" from "beside", so an ordinary reorder near a tile cannot
+silently create one. Nesting is capped at one level, and removing the
+second-to-last member **dissolves** the folder rather than leaving a one-item
+container. Dissolving never loses a tile.
+
+### Tile animation (§3.3) — `IMPLEMENTED`, `TESTED` (9 tests)
+
+Flip/slide/cycle, with every condition a veto: tile off screen, screen off,
+shell backgrounded, edit mode, battery saver, reduced motion. Stagger is derived
+from the tile id so it is stable across restarts — a random offset would make
+the start screen look different every launch.
+
+### Top bar and Action Center (§6.1, P0) — `IMPLEMENTED`
+
+The shell's own strip, inside its own window. It opens by **tap, not swipe**, so
+it never competes with the system's shade gesture (§6.1 warns that two rival
+swipes are worse than one panel). Quick actions **hand over** to Android's own
+panels instead of rendering toggles the shell cannot operate. A notification
+badge is shown only when access is actually granted: absent, not zero.
+
+### Notification bridge (§6.1, P1) — `IMPLEMENTED`
+
+Consent-gated `NotificationListenerService`. It keeps only package and count —
+titles are deliberately discarded — and on disconnect the cache is **cleared**,
+so a stale badge cannot outlive the permission.
+
+### Task source honesty (§4.3, §6.3) — `IMPLEMENTED`, `TESTED` (10 tests)
+
+`TaskSource` keeps the five notions §4.3 forbids conflating distinct, and the
+accuracy label travels with the data so the UI physically cannot present usage
+statistics as a window list. An unprivileged shell can only ever reach
+`SHELL_LAUNCHED`; consent lifts it to `OBSERVED_RECENCY`, which is still not
+live state; only an L2 bridge reaches a true task list. Where there is no true
+list, Recents **defers to the system's own overview**.
+
+### Display profile manager (§5.5) — `IMPLEMENTED`, `TESTED` (8 tests)
+
+The preview-before-apply step OP01 lacked. It states the resulting dp, the width
+class, the shrink percentage, the effect on a 48dp control, and that the change
+is system-wide. A profile that breaches the readability guard **or** shrinks
+touch targets past the minimum reports `safeToOffer = false`. `verify()` compares
+against a fresh measurement and complains on mismatch.
+
+### Debounce and recursion guard (§5.6) — `IMPLEMENTED`, `TESTED` (7 tests)
+
+A change must persist before it counts, so a phone held near 45° cannot thrash
+the shell — a test feeds 40 alternating readings and asserts not one change. And
+applying a profile suppresses input entirely, because a density change itself
+triggers configuration changes that would otherwise recurse.
+
+### Crash-loop guard (§12) — `IMPLEMENTED`, `TESTED` (7 tests)
+
+Two strikes disables an **optional** feature of ours and says why; a clean run
+clears the streak; essential features are never auto-disabled; the user can
+always switch one back on. It never touches system state.
+
+### App layout probe (§5.2) — `IMPLEMENTED`, `TESTED` (7 tests)
+
+`recordLaunch` records what the shell measured and leaves `layoutChanged`
+**null**, because the shell cannot see inside another app's window. Only
+`recordHumanObservation` can determine it, and it **throws** on blank evidence.
+CSV rows report `unknown` / `UNVERIFIED` until evidence exists.
+
+### Pivot, App Bar (§3.6, §3.7, P1) — `IMPLEMENTED`
+
+For the shell's own screens only, since §3.6 is explicit that these cannot be
+injected into third-party APKs.
+
+### Privileged bridge (§10 OP02-F) — interface only, by design
+
+`AbsentShellBridge` fails every call with a reason, so the lack of L2 is a
+runtime fact the UI can display. No Shizuku dependency, no hidden-API reflection
+anywhere in a shipped path.
+
+### Still not built
 
 | TZ item | Priority | Status |
 |---|---|---|
-| Live Folders UI (§3.4) | P1 | **missing** — groups exist in data only |
-| Start ↔ App List swipe (§3.5) | P0 | **missing** — header button only |
-| Alphabet jump list (§3.5) | P0 | **missing** — letter headers exist |
-| Live tile flip/cycle (§3.3) | P0/P1 | **missing** |
-| Notification badges (§3.3) | P1 | **missing** — needs L1 consent |
-| `MetroTopBar` / Action Center (§6.1) | P0/P1 | **missing** |
-| System panel adapter (§6.2) | P1 | **missing** |
-| Gesture insets coordinator (§7.2) | **P0, blocking** | **missing** |
-| Predictive back (§7.2) | P0 | **missing** |
-| `AppLayoutProbe` runtime wiring (§5.2) | P0 | **model only** — the profile and observation types exist; nothing records them yet |
-| Density preview before apply (§5.5.4) | P0 | **missing** |
-| Crash-loop auto-restore (§5.5.7) | P0 | **missing** |
-| Debounce / recursion guard (§5.6) | P0 | **missing** |
-| Panorama/Pivot, App Bar (§3.6, §3.7) | P1 | **missing** |
-| Shizuku bridge (§10 OP02-F) | P2 | **interface only, by design** |
 | Golden screenshot tests (§10 OP02-B) | P0 | **missing** — needs an emulator |
-| Module split into `metro-core`/`metro-visual`/… (§9) | — | **not done** — single module retained; the split is cosmetic next to the device gaps |
-
-The honest summary: of OP02's seven sub-operations, **A is done**, **B and C are
-partially done** (the headline items of each), and **D, E, F, G are largely not
-started**. §7 — gestures, the blocking criterion — has code neither written nor
-verifiable here.
-
----
+| Instrumented / UI tests | P0 | **missing** — needs an emulator |
+| Overlay taskbar over other apps (§6.2) | P1 | **missing** — `SYSTEM_ALERT_WINDOW` path not built |
+| Accessibility service registration (§6.2) | P1 | adapter written, **service not registered** |
+| Module split into `metro-core`/`metro-visual`/… (§9) | — | **not done** — cosmetic beside the device gaps |
+| Per-display density recovery (§5.5) | — | **missing** — found via Taskbar, single-display assumed |
 
 ## 4. Status by TZ §14 vocabulary
 
@@ -158,19 +259,20 @@ verifiable here.
 | OP01 not broken; project builds | ✅ 135 tests green, APK builds |
 | Both portrait views use a real vertical Metro grid | ✅ one shared surface, tested |
 | Transparent tiles with a correct shared wallpaper mask | ✅ **implemented and tested** |
-| Tile drag/resize, Start ↔ App List, state saved | ⚠️ drag/resize ✅; **Start↔AppList swipe missing** |
+| Tile drag/resize, Start ↔ App List, state saved | ✅ swipe, jump list and folders now built |
 | Basic Live Tiles from real sources | ✅ clock/date/battery/geometry |
 | Landscape does full-screen, and windowed where real | ✅ engine implemented and tested |
 | App profiles prevent bad stretching and rotation loops | ✅ implemented and tested |
 | A chosen group of third-party apps really checked | ❌ **BLOCKED — no device** |
-| Top bar / taskbar / Action Center consistent with permissions | ❌ **missing** |
-| Back/Home/Recents and the shade survive | ❌ **UNVERIFIED — blocking** |
+| Top bar / taskbar / Action Center consistent with permissions | ✅ built, consent-gated, hands over to system panels |
+| Back/Home/Recents and the shade survive | ⚠️ contract built and tested (12 tests); **UNVERIFIED on device — still blocking** |
 | Every optional API has a fallback | ✅ by gate construction |
 | No irreversible global DPI override | ✅ Tier 0 refuses all writes |
 | Gradle build passed; tests listed with exact results | ✅ 135/135 |
 
-**9 of 13 met, 1 partial, 3 not met.** The three unmet are the device-dependent
-ones plus the top panel.
+**11 of 13 met, 1 partial, 1 not met.** The partial is the gesture criterion
+(built and unit-tested, unverified on hardware); the unmet one is third-party app
+verification, which is purely device-bound.
 
 ---
 
@@ -207,7 +309,10 @@ ones plus the top panel.
 
 ## 8. One-line summary
 
-OP02 settled the platform's hard limits with verified primary-source evidence,
-built the WP8.1 transparent-tile system and the landscape compatibility engine
-with 49 new tests — and leaves the gesture criterion, the top panel and every
-device verification explicitly unfinished.
+OP02 settled the platform's hard limits with verified primary-source evidence
+and built every part of the specification that does not require hardware — the
+WP8.1 transparent-tile system, the landscape compatibility engine, the gesture
+priority contract, Live Folders, the Action Center and the honesty machinery
+around task sources — with 128 new tests. What remains is almost entirely the
+device: no screenshot exists, no third-party app has been observed, and the
+blocking gesture criterion is tested in logic but unproven on a phone.

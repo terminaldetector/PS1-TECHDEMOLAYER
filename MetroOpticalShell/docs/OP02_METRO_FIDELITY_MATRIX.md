@@ -21,19 +21,19 @@ redistributed; the shell uses the platform sans-serif at Metro weights.
 | Per-tile accent | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | **Our extension.** WP tiles took the system accent. |
 | **Start Background (shared image)** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Implemented per the two Microsoft articles; one image, one crop/zoom/pan transform |
 | **Transparent tiles revealing it** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | Continuity across adjacent tiles pinned by test |
-| Per-tile photo | ✅ | ✅ | ✅ | ✅ | ✅ (mode) | — | Mode exists; no picker UI yet |
+| Per-tile photo | ✅ | ✅ | ✅ | ✅ | ✅ (mode) | — | Mode exists; the shared Start Background has a picker, per-tile does not |
 | Translucent accent fill | ❌ | ❌ | ❌ | ❌ | ✅ (mode) | ✅ | **Explicitly labelled as ours**, not a historical imitation |
-| Live tile flip / cycle | ✅ | ✅ | ✅ | ✅ | ❌ | — | **Missing.** TZ §3.3 |
+| Live tile flip / cycle | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Paused when off screen, backgrounded, in battery saver or reduced motion |
 | Clock / date / battery tiles | ✅ | ✅ | ✅ | ✅ | ✅ | — | Real data only |
-| Notification badge counts | ✅ | ✅ | ✅ | ✅ | ❌ | — | **Missing.** Needs NotificationListener consent (L1) |
+| Notification badge counts | ✅ | ✅ | ✅ | ✅ | ✅ | — | Consent-gated; absent rather than zero without access |
 | Weather tile | ✅ | ✅ | ✅ | ✅ | ❌ | — | Deliberately absent: no data source, and faking it is forbidden |
-| Live Folders | ❌ | ❌ | ✅ | ✅ | ❌ (data only) | ✅ (data) | **Missing UI.** TZ §3.4. Groups exist in the store |
-| Start ↔ All Apps swipe | ✅ | ✅ | ✅ | ✅ | ❌ | — | **Missing.** Button only. TZ §3.5 |
-| Alphabet jump list | ✅ | ✅ | ✅ | ✅ | ❌ | — | **Missing.** Letter headers exist. TZ §3.5 |
+| Live Folders | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | Drag-onto-tile creation, one nesting level, dissolves below two members |
+| Start ↔ All Apps swipe | ✅ | ✅ | ✅ | ✅ | ✅ | — | Horizontal pager; disabled in edit mode so a tile drag cannot page |
+| Alphabet jump list | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | Full alphabet, empty letters greyed not hidden, `#` last |
 | App list search | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
-| Action Center | ❌ | ✅ | ✅ | ✅ | ❌ | — | **Missing.** TZ §6.1. An app cannot replace the system shade |
-| Panorama / Pivot | ✅ | ✅ | ✅ | partly | ❌ | — | **Missing.** TZ §3.6 (P1). Only ever in our own screens |
-| App Bar / ellipsis | ✅ | ✅ | ✅ | ✅ | ❌ | — | **Missing.** TZ §3.7 (P1) |
+| Action Center | ❌ | ✅ | ✅ | ✅ | ✅ | — | Our own panel, opened by tap not swipe; hands over to the system shade, which an app cannot replace |
+| Panorama / Pivot | ✅ | ✅ | ✅ | partly | ✅ | — | Our own screens only; cannot be injected into third-party APKs |
+| App Bar / ellipsis | ✅ | ✅ | ✅ | ✅ | ✅ | — | Four primary commands plus an ellipsis overflow |
 | Lock screen | ✅ | ✅ | ✅ | ✅ | ❌ | — | Keyguard is L4. Will not be attempted |
 | Large light-weight headers | ✅ | ✅ | ✅ | ✅ | ✅ | — | `displayLarge`, FontWeight.Light |
 | No rounding, no blur | ✅ | ✅ | ✅ | ✅ | ✅ | — | Material You shapes deliberately avoided |

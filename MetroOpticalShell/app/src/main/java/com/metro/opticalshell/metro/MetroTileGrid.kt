@@ -49,6 +49,7 @@ fun MetroTileGrid(
     onReorder: (tileId: String, targetIndex: Int) -> Unit = { _, _ -> },
     onResize: (tileId: String, size: TileSize) -> Unit = { _, _ -> },
     onUnpin: (tileId: String) -> Unit = {},
+    onDropOnTile: (draggedTileId: String, targetTileId: String) -> Unit = { _, _ -> },
     background: StartBackground = StartBackground(),
     backgroundMode: TileBackgroundMode = TileBackgroundMode.SOLID_ACCENT,
     presentationName: String = "",
@@ -174,9 +175,29 @@ fun MetroTileGrid(
                                             columns = columns,
                                             fallbackIndex = index,
                                         )
+                                        // A drop squarely on ANOTHER tile makes a
+                                        // folder; a drop between or beside tiles
+                                        // reorders (TZ 3.4). The inner-60% test is
+                                        // what separates "onto" from "next to".
+                                        val onTile = droppedSquarelyOnTile(
+                                            placed = placed,
+                                            targetIndex = target,
+                                            xPx = centreX,
+                                            yPx = centreY,
+                                            padPx = padPx,
+                                            unitPx = unitPx,
+                                            gapPx = gapPx,
+                                        )
                                         draggingId = null
                                         dragOffset = IntOffset.Zero
-                                        if (target != index) onReorder(tile.spec.tileId, target)
+                                        when {
+                                            target == index -> Unit
+                                            onTile -> onDropOnTile(
+                                                tile.spec.tileId,
+                                                placed[target].spec.tileId,
+                                            )
+                                            else -> onReorder(tile.spec.tileId, target)
+                                        }
                                     },
                                 )
                             },
@@ -237,4 +258,32 @@ internal fun dropIndexFor(
         if (t.row < row || (t.row == row && t.col <= col)) best = i
     }
     return if (best >= 0) best else fallbackIndex
+}
+
+/**
+ * True when the drop point lies in the inner 60% of the target tile's cell.
+ *
+ * The margin matters: without it every reorder near a tile would silently
+ * create a folder, which is the kind of unpredictable jump TZ 3.3 rules out.
+ */
+internal fun droppedSquarelyOnTile(
+    placed: List<PlacedTile>,
+    targetIndex: Int,
+    xPx: Float,
+    yPx: Float,
+    padPx: Float,
+    unitPx: Float,
+    gapPx: Float,
+): Boolean {
+    val target = placed.getOrNull(targetIndex) ?: return false
+    val pitch = unitPx + gapPx
+    val left = padPx + target.col * pitch
+    val top = padPx + target.row * pitch
+    val width = unitPx * target.w + gapPx * (target.w - 1)
+    val height = unitPx * target.h + gapPx * (target.h - 1)
+
+    val insetX = width * 0.2f
+    val insetY = height * 0.2f
+    return xPx >= left + insetX && xPx <= left + width - insetX &&
+        yPx >= top + insetY && yPx <= top + height - insetY
 }

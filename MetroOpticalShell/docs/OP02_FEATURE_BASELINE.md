@@ -1,5 +1,10 @@
 # OP02 feature baseline — what Operation 01 actually left behind
 
+> **Note:** this file is the audit taken at the *start* of OP02 and is left
+> unchanged as the historical record. Items marked `missing` here that OP02 went
+> on to build are listed as delivered in
+> [OP02_IMPLEMENTATION_REPORT.md](OP02_IMPLEMENTATION_REPORT.md) §2–3.
+
 TZ §1.3 is explicit: record what OP01 *really* implemented, and do not credit it
 with features from the specification that are absent. This file is that audit,
 made by reading the OP01 source, not the OP01 spec.

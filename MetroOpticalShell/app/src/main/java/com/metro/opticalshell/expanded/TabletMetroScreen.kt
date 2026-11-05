@@ -12,7 +12,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.metro.opticalshell.core.Presentation
 import com.metro.opticalshell.core.WindowWidthClass
+import com.metro.opticalshell.gesture.GestureGeometry
+import com.metro.opticalshell.metro.FolderContents
 import com.metro.opticalshell.metro.MetroStartSurface
+import com.metro.opticalshell.metro.StartBackground
+import com.metro.opticalshell.metro.TileBackgroundMode
 import com.metro.opticalshell.metro.TileSize
 import com.metro.opticalshell.metro.TileSpec
 import com.metro.opticalshell.runtime.InstalledApp
@@ -51,11 +55,19 @@ fun TabletMetroScreen(
     onOpenSettings: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
+    background: StartBackground = StartBackground(),
+    backgroundMode: TileBackgroundMode = TileBackgroundMode.SOLID_ACCENT,
+    gestureGeometry: GestureGeometry? = null,
+    densityDpi: Int = 420,
+    topBar: (@Composable () -> Unit)? = null,
+    folderOf: (String) -> FolderContents? = { null },
+    onCreateFolder: (String, String) -> Unit = { _, _ -> },
+    surfaceTiles: List<TileSpec> = tiles,
 ) {
     Column(modifier = modifier.fillMaxSize().background(MetroColors.Black)) {
         MetroStartSurface(
             presentation = Presentation.EXPANDED_PORTRAIT,
-            tiles = tiles,
+            tiles = surfaceTiles,
             columns = columns,
             apps = apps,
             query = query,
@@ -73,6 +85,13 @@ fun TabletMetroScreen(
             onOpenSettings = onOpenSettings,
             onOpenDiagnostics = onOpenDiagnostics,
             modifier = Modifier.weight(1f),
+            background = background,
+            backgroundMode = backgroundMode,
+            gestureGeometry = gestureGeometry,
+            densityDpi = densityDpi,
+            topBar = topBar,
+            folderOf = folderOf,
+            onCreateFolder = onCreateFolder,
         )
 
         TabletStatusStrip(widthClass = widthClass, windowWidthDp = windowWidthDp)

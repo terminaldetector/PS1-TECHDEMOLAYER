@@ -9,6 +9,11 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.metro.opticalshell.core.MobileLandscapePolicy
 import com.metro.opticalshell.core.ShellEnvironment
 import com.metro.opticalshell.core.ShellState
+import com.metro.opticalshell.metro.StartBackground
+import com.metro.opticalshell.metro.TileAnimationPolicy
+import com.metro.opticalshell.metro.TileBackgroundMode
+import com.metro.opticalshell.metro.VisualPreset
+import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -47,6 +52,10 @@ class SettingsRepository(private val context: Context) {
         val accent = intPreferencesKey("accent_argb")
         val taskbarAtTop = booleanPreferencesKey("taskbar_at_top")
         val touchSlopBoost = intPreferencesKey("touch_slop_boost_dp")
+        val visualPreset = stringPreferencesKey("visual_preset")
+        val backgroundMode = stringPreferencesKey("tile_background_mode")
+        val startBackground = stringPreferencesKey("start_background_v1")
+        val tileAnimation = stringPreferencesKey("tile_animation_v1")
     }
 
     val shellState: Flow<ShellState> = context.shellDataStore.data.map { prefs ->
@@ -81,6 +90,56 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.mobileLandscapePolicy] = state.mobileLandscapePolicy.name
             prefs[Keys.autoExpandOnPointer] = state.autoExpandOnPointer
         }
+    }
+
+    /** OP02 §3.2: the visual preset and the tile background mode. */
+    val visualPreset: Flow<VisualPreset> = context.shellDataStore.data.map { prefs ->
+        prefs[Keys.visualPreset]
+            ?.let { runCatching { VisualPreset.valueOf(it) }.getOrNull() }
+            ?: VisualPreset.WP8_CLASSIC
+    }
+
+    val backgroundMode: Flow<TileBackgroundMode> = context.shellDataStore.data.map { prefs ->
+        prefs[Keys.backgroundMode]
+            ?.let { runCatching { TileBackgroundMode.valueOf(it) }.getOrNull() }
+            ?: VisualPreset.WP8_CLASSIC.defaultBackgroundMode
+    }
+
+    val startBackground: Flow<StartBackground> = context.shellDataStore.data.map { prefs ->
+        prefs[Keys.startBackground]
+            ?.let { runCatching { ShellJson.decodeFromString<StartBackground>(it) }.getOrNull() }
+            ?: StartBackground()
+    }
+
+    val tileAnimation: Flow<TileAnimationPolicy> = context.shellDataStore.data.map { prefs ->
+        prefs[Keys.tileAnimation]
+            ?.let { runCatching { ShellJson.decodeFromString<TileAnimationPolicy>(it) }.getOrNull() }
+            ?: TileAnimationPolicy()
+    }
+
+    /**
+     * Setting a preset also sets its historically correct background mode
+     * (TZ §3.7: do not blur the chronology).
+     */
+    suspend fun persistPreset(preset: VisualPreset) {
+        context.shellDataStore.edit { prefs ->
+            prefs[Keys.visualPreset] = preset.name
+            prefs[Keys.backgroundMode] = preset.defaultBackgroundMode.name
+        }
+    }
+
+    suspend fun persistBackgroundMode(mode: TileBackgroundMode) {
+        context.shellDataStore.edit { it[Keys.backgroundMode] = mode.name }
+    }
+
+    suspend fun persist(background: StartBackground) {
+        val encoded = ShellJson.encodeToString(background.clamped())
+        context.shellDataStore.edit { it[Keys.startBackground] = encoded }
+    }
+
+    suspend fun persist(policy: TileAnimationPolicy) {
+        val encoded = ShellJson.encodeToString(policy.clamped())
+        context.shellDataStore.edit { it[Keys.tileAnimation] = encoded }
     }
 
     suspend fun persist(appearance: AppearancePreferences) {
