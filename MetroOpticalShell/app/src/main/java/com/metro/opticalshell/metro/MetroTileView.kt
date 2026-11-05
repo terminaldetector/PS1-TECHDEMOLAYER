@@ -42,11 +42,26 @@ fun MetroTileView(
 ) {
     val accent = tile.spec.accentArgb?.let { Color(it) } ?: LocalAccent.current
     val spec = tile.spec
+    val shared = LocalStartBackground.current
+
+    // TZ 3.2: in WP81_IMAGE_MASK the tile body must be fully clear so the ONE
+    // shared Start Background shows through. That clear body is precisely what
+    // separates the historical effect from TRANSLUCENT_ACCENT, which is a
+    // deliberate user choice rather than an imitation of it.
+    val fillAlpha = TileBackgroundMath.accentAlpha(shared.mode)
+    val showScrim = shared.isActive && tile.w >= 2 && tile.h >= 2
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(accent),
+            .then(
+                if (fillAlpha > 0f) {
+                    Modifier.background(accent.copy(alpha = fillAlpha))
+                } else {
+                    Modifier
+                },
+            )
+            .tileLabelScrim(showScrim),
     ) {
         when (spec.live) {
             LiveTileKind.CLOCK -> ClockTileContent(spec)

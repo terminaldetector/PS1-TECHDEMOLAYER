@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "generated": "2026-11-05",
+  "operation": "OP02",
+  "device": null,
+  "deviceNote": "No physical device or emulator was available. Every deviceVerified field is false.",
+  "tiers": {
+    "L0_APP": "Ordinary app: own window, own gestures, public APIs",
+    "L1_USER_GRANTED": "Home role, notification listener, overlay, accessibility, usage stats",
+    "L2_SHELL_BRIDGE": "Shizuku / ADB shell UID. Not root",
+    "L3_ROOT": "Root",
+    "L4_PLATFORM": "Platform signature or ROM. Not an app capability"
+  },
+  "capabilities": [
+    { "id": "list_apps", "tier": "L0_APP", "state": "AVAILABLE", "verification": "IMPLEMENTED", "deviceVerified": false, "evidence": null },
+    { "id": "launch_app", "tier": "L0_APP", "state": "AVAILABLE", "verification": "IMPLEMENTED", "deviceVerified": false, "evidence": null },
+    { "id": "detect_freeform", "tier": "L0_APP", "state": "AVAILABLE", "verification": "TESTED", "deviceVerified": false, "evidence": "farmerbb/Taskbar@e2a00b9 U.java:850" },
+    { "id": "request_launch_bounds", "tier": "L0_APP", "state": "AVAILABLE", "verification": "IMPLEMENTED", "deviceVerified": false, "evidence": "developer.android.com ActivityOptions", "note": "A hint only. A successful call is not a window." },
+    { "id": "observe_own_geometry", "tier": "L0_APP", "state": "AVAILABLE", "verification": "TESTED", "deviceVerified": false, "evidence": null },
+    { "id": "be_home", "tier": "L1_USER_GRANTED", "state": "PRIVILEGE_REQUIRED", "verification": "IMPLEMENTED", "deviceVerified": false, "evidence": "developer.android.com RoleManager" },
+    { "id": "read_notifications", "tier": "L1_USER_GRANTED", "state": "PRIVILEGE_REQUIRED", "verification": "NOT_STARTED", "deviceVerified": false, "evidence": "developer.android.com NotificationListenerService" },
+    { "id": "open_system_panels", "tier": "L1_USER_GRANTED", "state": "PRIVILEGE_REQUIRED", "verification": "NOT_STARTED", "deviceVerified": false, "evidence": "developer.android.com AccessibilityService" },
+    { "id": "draw_overlay", "tier": "L1_USER_GRANTED", "state": "PRIVILEGE_REQUIRED", "verification": "NOT_STARTED", "deviceVerified": false, "evidence": "developer.android.com behaviour-changes-12" },
+    { "id": "infer_app_recency", "tier": "L1_USER_GRANTED", "state": "PRIVILEGE_REQUIRED", "verification": "NOT_STARTED", "deviceVerified": false, "evidence": "axel358/smartdock@517604a AppUtils.getRecentTasks", "note": "UsageStats inference. NOT a list of live windows." },
+    { "id": "set_windowing_mode", "tier": "L2_SHELL_BRIDGE", "state": "PRIVILEGE_REQUIRED", "verification": "NOT_STARTED", "deviceVerified": false, "evidence": "axel358/smartdock@517604a AppUtils.kt:375; farmerbb/Taskbar@e2a00b9 U.java:988", "note": "ActivityOptions.setLaunchWindowingMode is a hidden API reached by reflection." },
+    { "id": "list_running_tasks", "tier": "L2_SHELL_BRIDGE", "state": "PRIVILEGE_REQUIRED", "verification": "NOT_STARTED", "deviceVerified": false, "evidence": "axel358/smartdock@517604a ActivityManagerWrapper.kt" },
+    { "id": "set_system_density", "tier": "L2_SHELL_BRIDGE", "state": "PRIVILEGE_REQUIRED", "verification": "TESTED", "deviceVerified": false, "evidence": "farmerbb/Taskbar@e2a00b9 U.java:1933", "note": "Tier 0 bridge refuses all writes and returns the ADB procedure." },
+    { "id": "resize_task", "tier": "L3_ROOT", "state": "PRIVILEGE_REQUIRED", "verification": "NOT_STARTED", "deviceVerified": false, "evidence": "axel358/smartdock@517604a AppUtils.kt:381 (runAsRoot)" },
+    { "id": "be_recents_provider", "tier": "L4_PLATFORM", "state": "IMPOSSIBLE_AT_APP_TIER", "verification": "NOT_STARTED", "deviceVerified": false, "evidence": "AOSP Launcher3 quickstep/AndroidManifest.xml", "note": "TouchInteractionService requires STATUS_BAR_SERVICE, MONITOR_INPUT, MANAGE_ACTIVITY_TASKS, ALLOW_SLIPPERY_TOUCHES." },
+    { "id": "replace_status_bar", "tier": "L4_PLATFORM", "state": "IMPOSSIBLE_AT_APP_TIER", "verification": "NOT_STARTED", "deviceVerified": false, "evidence": null }
+  ],
+  "impossibleAtAppTier": ["be_recents_provider", "replace_status_bar"],
+  "openQuestionsRequiringDevice": [
+    "Does HyperOS keep gesture navigation when a third-party Home is assigned?",
+    "Is FEATURE_FREEFORM_WINDOW_MANAGEMENT present on the internal display?",
+    "Which third-party apps actually change layout at >=600dp?",
+    "Which apps are recreated or destabilised by rotation?"
+  ]
+}

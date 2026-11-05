@@ -1,0 +1,17 @@
+gesture,presentation,home_app,navigation_mode,overlay,foreground,expected,observed,result,limitation
+swipe-left-edge-back,MOBILE_PORTRAIT,stock,gesture,off,metro,android_back,NOT_TESTED,NOT_RUN,no device available
+swipe-right-edge-back,MOBILE_PORTRAIT,stock,gesture,off,metro,android_back,NOT_TESTED,NOT_RUN,no device available
+swipe-up-home,MOBILE_PORTRAIT,stock,gesture,off,metro,home,NOT_TESTED,NOT_RUN,no device available
+swipe-up-hold-recents,MOBILE_PORTRAIT,stock,gesture,off,metro,recents,NOT_TESTED,NOT_RUN,no device available
+horizontal-gesture-zone-switch,MOBILE_PORTRAIT,stock,gesture,off,metro,quick_switch,NOT_TESTED,NOT_RUN,no device available
+swipe-down-notifications,MOBILE_PORTRAIT,stock,gesture,off,metro,notification_shade,NOT_TESTED,NOT_RUN,no device available
+metro-start-to-applist,MOBILE_PORTRAIT,stock,gesture,off,metro,applist,NOT_TESTED,NOT_RUN,no device available
+tile-drag,MOBILE_PORTRAIT,stock,gesture,off,metro,tile_moves_not_back,NOT_TESTED,NOT_RUN,no device available
+swipe-left-edge-back,EXPANDED_LANDSCAPE,stock,gesture,off,metro,android_back,NOT_TESTED,NOT_RUN,no device available
+swipe-up-home,EXPANDED_LANDSCAPE,stock,gesture,off,metro,home,NOT_TESTED,NOT_RUN,no device available
+swipe-up-home,MOBILE_PORTRAIT,metro,gesture,off,metro,home,NOT_TESTED,NOT_RUN,BLOCKING criterion - HyperOS may force 3-button
+swipe-up-hold-recents,MOBILE_PORTRAIT,metro,gesture,off,metro,recents,NOT_TESTED,NOT_RUN,BLOCKING criterion - HyperOS may force 3-button
+swipe-down-notifications,MOBILE_PORTRAIT,metro,gesture,off,metro,notification_shade,NOT_TESTED,NOT_RUN,BLOCKING criterion
+back-3button,MOBILE_PORTRAIT,metro,3button,off,metro,android_back,NOT_TESTED,NOT_RUN,compatibility profile fallback
+swipe-up-home,EXPANDED_LANDSCAPE,metro,gesture,on,third_party,home,NOT_TESTED,NOT_RUN,overlay must not swallow system gestures
+ime-open-taskbar,EXPANDED_LANDSCAPE,metro,gesture,on,third_party,back_still_reachable,NOT_TESTED,NOT_RUN,taskbar must not cover IME or Back

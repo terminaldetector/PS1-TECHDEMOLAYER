@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -48,6 +49,9 @@ fun MetroTileGrid(
     onReorder: (tileId: String, targetIndex: Int) -> Unit = { _, _ -> },
     onResize: (tileId: String, size: TileSize) -> Unit = { _, _ -> },
     onUnpin: (tileId: String) -> Unit = {},
+    background: StartBackground = StartBackground(),
+    backgroundMode: TileBackgroundMode = TileBackgroundMode.SOLID_ACCENT,
+    presentationName: String = "",
     tileContent: @Composable (PlacedTile, Dp) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -68,6 +72,24 @@ fun MetroTileGrid(
         fun spanDp(span: Int): Dp = unit * span + gap * (span - 1)
 
         val surfaceHeight = spanDp(rows.coerceAtLeast(1)) + pad * 2
+
+        // ONE shared Start Background for the whole surface (TZ 3.2). Every
+        // transparent tile samples this, which is what keeps the picture
+        // continuous across neighbours instead of repeating per cell.
+        val canvasWidthPx = with(density) { maxWidth.toPx() }
+        val canvasHeightPx = with(density) {
+            when (background.anchor) {
+                BackgroundAnchor.CONTENT -> surfaceHeight.toPx()
+                BackgroundAnchor.VIEWPORT -> maxHeight.toPx()
+            }
+        }
+        val sharedBackground = rememberSharedStartBackground(
+            background = background,
+            mode = backgroundMode,
+            presentationName = presentationName,
+            canvasWidthPx = canvasWidthPx,
+            canvasHeightPx = canvasHeightPx,
+        )
 
         Box(
             modifier = Modifier
@@ -96,6 +118,13 @@ fun MetroTileGrid(
                             )
                         }
                         .size(width = spanDp(tile.w), height = spanDp(tile.h))
+                        // The tile's position in the SHARED canvas space is what
+                        // makes the wallpaper line up with its neighbours.
+                        .wp81TileMask(
+                            shared = sharedBackground,
+                            tileLeftInCanvasPx = baseX,
+                            tileTopInCanvasPx = baseY,
+                        )
                         .graphicsLayer {
                             // WP8 lifted the dragged tile slightly. No blur (TZ 3.1).
                             if (isDragging) {
@@ -153,7 +182,9 @@ fun MetroTileGrid(
                             },
                         ),
                 ) {
-                    tileContent(tile, unit)
+                    CompositionLocalProvider(LocalStartBackground provides sharedBackground) {
+                        tileContent(tile, unit)
+                    }
 
                     if (editMode) {
                         TileEditOverlay(
