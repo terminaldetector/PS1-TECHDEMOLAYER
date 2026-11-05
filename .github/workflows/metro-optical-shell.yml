@@ -1,0 +1,92 @@
+name: Metro Optical Shell
+
+# Builds the Android shell in MetroOpticalShell/ and publishes the debug APK
+# as a workflow artifact. The PS1 demo at the repository root is a separate
+# build and is untouched by this workflow.
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "MetroOpticalShell/**"
+      - ".github/workflows/metro-optical-shell.yml"
+  pull_request:
+    paths:
+      - "MetroOpticalShell/**"
+      - ".github/workflows/metro-optical-shell.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: MetroOpticalShell
+
+jobs:
+  build:
+    name: Unit tests and debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: MetroOpticalShell
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew --no-daemon :app:lintDebug
+        continue-on-error: true
+
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Report APK size
+        run: |
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          ls -l "$apk"
+          echo "### Debug APK" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$(basename "$apk")\` — $(du -h "$apk" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: metro-optical-shell-debug-apk
+          path: MetroOpticalShell/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload unit test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: MetroOpticalShell/app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: MetroOpticalShell/app/build/reports/lint-results-debug.html
+          if-no-files-found: warn
+          retention-days: 14

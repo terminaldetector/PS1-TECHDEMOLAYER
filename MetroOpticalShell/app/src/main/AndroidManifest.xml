@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Package visibility (Android 11+): a launcher legitimately needs to see
+      launchable activities. We declare the narrow <queries> intent filter
+      instead of requesting QUERY_ALL_PACKAGES, which is a restricted
+      permission. See docs/ARCHITECTURE.md -> "Package visibility".
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".ShellApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MetroOpticalShell">
+
+        <!--
+          Tier 0 baseline: the shell starts from a normal launcher icon and
+          needs no Home role and no privileges (TZ 5.3, section 1).
+
+          configChanges: the shell owns rotation so that EXPANDED_PORTRAIT and
+          EXPANDED_LANDSCAPE are two presentations of ONE environment rather
+          than two Activity lifetimes. State is additionally persisted through
+          DataStore so process death is survivable too (TZ section 8).
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|layoutDirection"
+            android:resizeableActivity="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          OPTIONAL Home registration (TZ OP01-A.4 / 5.3).
+          Disabled by default: the shell must never silently take over Home.
+          HomeRoleController enables this component only on explicit user
+          action, and the OEM may still refuse the role.
+        -->
+        <activity-alias
+            android:name=".HomeAlias"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:label="@string/app_name"
+            tools:ignore="ExportedActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+    </application>
+</manifest>
