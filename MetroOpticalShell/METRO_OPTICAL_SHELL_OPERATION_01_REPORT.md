@@ -50,7 +50,7 @@ matrix is for.
 | Subsystem | Status | Evidence |
 |---|---|---|
 | Gradle/Android project, pinned versions | `TESTED` | `assembleDebug` succeeds; AGP 8.7.3 / Kotlin 2.0.21 / Compose BOM 2024.10.01, no dynamic versions |
-| Debug APK | `TESTED` | `app/build/outputs/apk/debug/app-debug.apk`, ~10.7 MB |
+| Debug APK | `TESTED` | `app/build/outputs/apk/debug/app-debug.apk`, ~11.3 MB; also built green on CI and uploaded as a workflow artifact |
 | Two environments / three presentations | `TESTED` | `ShellStateMachineTest`, 13 tests |
 | Metro tile core (4 sizes, packing) | `TESTED` | `TilePackingAlgorithmTest`, 16 tests |
 | Tile drag / resize / unpin / groups | `IMPLEMENTED` | `MetroTileGrid`, `TileEditController`, `TileCollectionTest` covers the data rules |
@@ -70,7 +70,16 @@ matrix is for.
 | Freeform probe + fallback | `IMPLEMENTED` | `FreeformLaunchAdapter`; `OBSERVED` unreachable without a human |
 | HyperOS behaviour | `BLOCKED` | `docs/HYPEROS_LIMITATIONS.md` separates platform facts from unverified OEM claims |
 
-**86 unit tests, 0 failures.**
+**86 unit tests, 0 failures. Lint: 0 errors, 30 warnings.**
+
+All 30 remaining lint warnings are `GradleDependency` / `AndroidGradlePluginVersion`
+("a newer version is available"). They are expected and deliberate: TZ OP01-A.3
+requires versions to be pinned to what the environment actually has, and forbids
+dynamic versions. Every other lint finding was fixed rather than suppressed:
+the redundant `-anydpi-v26` qualifier and unused round icon (minSdk is 26), a
+missing `<monochrome>` layer for Android 13+ themed icons, a dead
+`SDK_INT >= N` check, and a per-second `Long` tick that was boxing on every
+tick (now `mutableLongStateOf`).
 
 ```
 DisplayBridgeTest           6
@@ -96,7 +105,7 @@ than `DEVICE_VERIFIED`, which nothing in this operation has earned.
 
 | Code | Check | Result | Note |
 |---|---|---|---|
-| `A01` | APK builds | **TESTED** | clean `assembleDebug` log + APK on disk |
+| `A01` | APK builds | **TESTED** | clean `assembleDebug` locally **and** a green GitHub Actions run on a fresh runner, APK uploaded as an artifact |
 | `A02` | Mobile Portrait = WP8 Metro | `IMPLEMENTED` | needs a screenshot from a device |
 | `A03` | Four editable tile sizes | **TESTED** | packing/clamping/no-overlap proven for 2–12 columns |
 | `A04` | Real apps listed and launched | `IMPLEMENTED` | real APIs wired; no device to run them |

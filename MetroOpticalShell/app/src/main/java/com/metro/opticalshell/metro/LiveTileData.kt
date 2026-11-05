@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -33,10 +34,12 @@ import java.util.Locale
 /** Ticks once per [periodMillis] while composed, and not a moment longer. */
 @Composable
 fun rememberTicker(periodMillis: Long = 1_000L): State<Long> {
-    val state = remember { mutableStateOf(System.currentTimeMillis()) }
+    // mutableLongStateOf, not mutableStateOf: this ticks every second and
+    // boxing a Long on each tick is pure garbage.
+    val state = remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(periodMillis) {
         while (true) {
-            state.value = System.currentTimeMillis()
+            state.longValue = System.currentTimeMillis()
             // Align to the next boundary so the clock does not drift visibly.
             val now = System.currentTimeMillis()
             delay(periodMillis - (now % periodMillis))

@@ -5,7 +5,6 @@ import android.app.ActivityOptions
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Rect
-import android.os.Build
 import android.provider.Settings
 import androidx.core.view.WindowInsetsCompat
 
@@ -76,7 +75,9 @@ class FreeformLaunchAdapter(
             Settings.Global.getInt(context.contentResolver, "enable_freeform_support", 0) == 1
         }.getOrDefault(false)
 
-        val multiWindowApi = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+        // minSdk is 26, so the multi-window API (added in 24) is always present.
+        // Kept in the report because it is useful context, not a branch.
+        val multiWindowApi = true
 
         val recorded = observation
         val status = when {
