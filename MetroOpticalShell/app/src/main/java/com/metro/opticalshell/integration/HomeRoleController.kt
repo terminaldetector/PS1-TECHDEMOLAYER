@@ -31,6 +31,11 @@ data class HomeStatus(
     val apiLevel: Int,
     val manufacturer: String,
     val romHint: String?,
+    /**
+     * Recorded by an operator who saw the ROM refuse the selection. Null means
+     * "not attempted"; the app cannot observe a Settings dialog.
+     */
+    val oemRefusedSelection: Boolean? = null,
 ) {
     /**
      * Honest verdict, in the vocabulary §7 asks for.
@@ -39,12 +44,38 @@ data class HomeStatus(
         get() = when {
             isCurrentHome -> HomeVerdict.ROLE_GRANTED
             !candidateRegistered -> HomeVerdict.CANDIDATE_NOT_REGISTERED
+            // The refusal happens inside Settings, so the app cannot detect it:
+            // from here a refused selection and an un-chosen one look identical.
+            // It is therefore an operator-recorded fact, like FreeformStatus.
+            oemRefusedSelection == true -> HomeVerdict.OEM_REFUSED_SELECTION
             availableHomePackages.contains(installedPackage) -> HomeVerdict.CANDIDATE_VISIBLE
             roleAvailable -> HomeVerdict.ROLE_AVAILABLE_BUT_NOT_LISTED
             else -> HomeVerdict.UNKNOWN
         }
 
     /** The exact commands an operator can run to verify this independently. */
+    /**
+     * The documented shell-level route, for a ROM that refuses the selection in
+     * Settings (HyperOS "only verified apps").
+     *
+     * `cmd package set-home-activity` is AOSP's own PackageManager shell
+     * command. It sets the preferred Home activity directly and does not pass
+     * through Settings' vendor policy check. It needs ADB (L2); it is not root,
+     * and the shell cannot run it itself.
+     *
+     * UNVERIFIED on this ROM. A vendor may also block it at the package-manager
+     * level, in which case the command fails and that is the real answer.
+     */
+    fun shellSetHomeCommands(): List<String> = listOf(
+        "# make Metro the Home activity without the Settings policy check",
+        "adb shell cmd package set-home-activity $installedPackage/com.metro.opticalshell.HomeAlias",
+        "# confirm",
+        "adb shell cmd package resolve-activity -a android.intent.action.MAIN " +
+            "-c android.intent.category.HOME",
+        "# revert to the stock launcher",
+        "adb shell cmd package set-home-activity com.miui.home/com.miui.home.launcher.Launcher",
+    )
+
     fun diagnosticCommands(): List<String> = listOf(
         "adb shell dumpsys package $installedPackage | grep -A3 HomeAlias",
         "adb shell cmd package resolve-activity -a android.intent.action.MAIN " +
@@ -82,6 +113,21 @@ enum class HomeVerdict {
      */
     ROLE_AVAILABLE_BUT_NOT_LISTED,
 
+    /**
+     * Metro IS listed as a candidate, but the OEM refuses to let it be
+     * selected.
+     *
+     * DEVICE_OBSERVED on HyperOS: the Default Home screen list shows Metro, and
+     * tapping it produces "As launcher apps from third parties may result in
+     * problems like data leaks, abnormal battery drain, and lagging. Only
+     * verified apps can be set as your default launcher."
+     *
+     * This is a Xiaomi policy check in Settings, not a missing permission and
+     * not an Android limitation. The role API is untouched by it, which is why
+     * the shell-level route below can still work where Settings refuses.
+     */
+    OEM_REFUSED_SELECTION,
+
     /** Metro is the Home app. */
     ROLE_GRANTED,
 
@@ -104,6 +150,14 @@ enum class HomeVerdict {
                     "candidate. Collect the diagnostics before concluding the OEM " +
                     "blocks it - a disabled component or a different installed build " +
                     "variant looks identical from here."
+
+            OEM_REFUSED_SELECTION ->
+                "This ROM refuses to let a third-party launcher be selected " +
+                    "(\"only verified apps\"). Metro is correctly registered - the " +
+                    "system lists it - so this is an OEM policy decision, not a " +
+                    "fault in the shell. The documented shell-level route is " +
+                    "`cmd package set-home-activity`, which does not go through " +
+                    "the Settings check."
 
             ROLE_GRANTED ->
                 "Metro is the current Home app. Check separately whether system " +

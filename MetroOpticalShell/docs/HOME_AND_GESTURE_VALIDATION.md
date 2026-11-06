@@ -102,17 +102,75 @@ adb shell pm get-home-activities
 adb shell dumpsys package preferred-activities | grep -i home
 ```
 
-## 5. Home results — `NOT COLLECTED`
+## 5. Home results — FIRST DEVICE OBSERVATIONS
+
+**Device: Xiaomi/Redmi on HyperOS. Observed 6 November 2026.**
 
 | Field | Value |
 |---|---|
-| Device / model | _not collected_ |
-| HyperOS build | _not collected_ |
-| Android API | _not collected_ |
-| Installed variant | _not collected_ |
-| Appears in Home chooser? | _not collected_ |
-| Role request accepted? | _not collected_ |
-| Return to stock launcher worked? | _not collected_ |
+| Appears in the Default Home screen list? | **YES — `DEVICE_OBSERVED`** |
+| Icon and label render correctly? | **YES — `DEVICE_OBSERVED`** (four-tile adaptive icon, "Metro Optical Shell") |
+| Selection accepted? | **NO — `DEVICE_OBSERVED`, refused by the ROM** |
+| Refusal text | "As launcher apps from third parties may result in problems like data leaks, abnormal battery drain, and lagging. Only verified apps can be set as your default launcher." |
+| Verdict | `OEM_REFUSED_SELECTION` |
+| Device / HyperOS build / API | _still to be collected from the diagnostics screen_ |
+| Installed variant | _to confirm with `pm list packages | grep metro`_ |
+
+### What this proves
+
+**FIX-01 is confirmed on hardware.** Before it, `HomeAlias` was
+`android:enabled="false"` with no code anywhere able to enable it, so Metro
+could not appear in this list under any circumstance. It now does. The manifest
+declaration, the alias target and the icon are all correct.
+
+### What blocks it
+
+The refusal is a **Xiaomi policy check inside Settings**, not a missing
+permission and not an Android limitation:
+
+- Metro *is* registered — the system lists it, which is the part we control.
+- The dialog is a vendor allow-list ("only verified apps"), applied at the
+  moment of selection.
+- Nothing in `RoleManager` or `PackageManager` rejected us.
+
+So this is the §15 case: "for a function closed by HyperOS, what is required is
+not 'impossible, skipping' but the exact point of failure, the permissions, a
+reproducible test, an available alternative mechanism and its limits."
+
+**Exact point of failure:** Settings' launcher verification, at selection time —
+after candidacy succeeds and before any role is granted.
+
+### The alternative mechanism
+
+`cmd package set-home-activity` is AOSP's own PackageManager shell command. It
+sets the preferred Home activity directly and does **not** pass through
+Settings' vendor policy check. It needs ADB (L2), not root, and the shell
+cannot run it itself.
+
+```bash
+adb shell cmd package set-home-activity com.metro.opticalshell.debug/com.metro.opticalshell.HomeAlias
+```
+
+```bash
+adb shell cmd package resolve-activity -a android.intent.action.MAIN -c android.intent.category.HOME
+```
+
+Revert at any time:
+
+```bash
+adb shell cmd package set-home-activity com.miui.home/com.miui.home.launcher.Launcher
+```
+
+**Status: UNVERIFIED.** A vendor can also block this at the package-manager
+level. If the command fails, that failure is the real answer and must be
+recorded as such rather than retried differently.
+
+### Its limits, stated before trying
+
+Even if the command succeeds, it settles only *who is Home*. It says nothing
+about whether HyperOS keeps gesture navigation afterwards — which is the
+separate blocking question in §6 below, and the one that actually decides the
+product's shape.
 
 ## 6. Gesture contract
 

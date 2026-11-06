@@ -211,12 +211,40 @@ confirmed. Nothing has ever run on a device.
 
 ---
 
+## 6a. First hardware observations (6 November 2026)
+
+The APK was installed on a Redmi/HyperOS device. Two facts, both now
+`DEVICE_OBSERVED`:
+
+1. **Metro appears in the Default Home screen list.** FIX-01 is confirmed on
+   hardware. Before it the alias was disabled with no code able to enable it, so
+   this was impossible by construction. The adaptive icon and label render
+   correctly too.
+2. **The ROM refuses the selection:** "Only verified apps can be set as your
+   default launcher."
+
+The second is a Xiaomi allow-list check **inside Settings**, applied at
+selection time — after candidacy succeeds and before any role is granted.
+Nothing in `RoleManager` or `PackageManager` rejected us, and the part under our
+control works.
+
+Added in response: a `OEM_REFUSED_SELECTION` verdict, operator recording of the
+refusal (the shell cannot see a Settings dialog, so this is a human observation
+like a freeform one), and the documented shell-level route
+`cmd package set-home-activity`, which does not pass through Settings' vendor
+check. That route is **UNVERIFIED**; a vendor can block it at the package
+manager too, and if it does, that failure is the answer.
+
+This also means the blocking gesture question cannot be reached through Settings
+on this ROM at all — it now depends on the shell route working first.
+
 ## 7. The hardware experiments, in priority order
 
-1. **Install the debug APK and check the Home chooser.** This is now a real
-   question for the first time: before FIX-01 the answer was necessarily no.
-   If Metro is absent, collect the four commands in
-   `HOME_AND_GESTURE_VALIDATION.md` §4 before concluding anything about the OEM.
+1. ~~Install the debug APK and check the Home chooser.~~ **DONE 6 Nov 2026:
+   Metro is listed; the ROM refuses the selection.** Next: try
+   `cmd package set-home-activity` over ADB, which bypasses the Settings policy
+   check. If that also fails, the Home route is genuinely closed on this ROM and
+   the overlay path becomes the product's default.
 2. **Assign Metro as Home and test Back/Home/Recents/shade.** The blocking
    criterion. If HyperOS downgrades to three-button navigation, Home integration
    must **not** be called successful, and the right product answer is to make the

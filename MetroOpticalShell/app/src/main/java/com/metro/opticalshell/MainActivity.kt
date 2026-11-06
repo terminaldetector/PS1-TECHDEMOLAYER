@@ -305,6 +305,10 @@ class MainActivity : ComponentActivity() {
                                         startActivity(homeController.systemHomeSettingsIntent())
                                     }
                                 },
+                                onRecordOemRefusal = { refused ->
+                                    homeStatus = homeController.status()
+                                        .copy(oemRefusedSelection = refused)
+                                },
                                 onBack = { route = ShellRoute.SHELL },
                             )
                         }

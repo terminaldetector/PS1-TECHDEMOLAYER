@@ -55,6 +55,7 @@ fun DeviceCapabilityScreen(
     onUnregisterHomeCandidate: () -> Unit = {},
     onRequestHomeRole: () -> Unit = {},
     onOpenHomeSettings: () -> Unit = {},
+    onRecordOemRefusal: (Boolean) -> Unit = {},
 ) {
     val accent = LocalAccent.current
     var pendingDensity by remember { mutableStateOf<Int?>(null) }
@@ -115,6 +116,36 @@ fun DeviceCapabilityScreen(
                 color = MetroColors.Dim,
                 modifier = Modifier.padding(top = 6.dp),
             )
+            // The refusal happens inside Settings, so the shell cannot see it.
+            // Like a freeform observation, only a person can record it.
+            Text(
+                text = "If the system refuses the selection (for example \"only " +
+                    "verified apps can be set as your default launcher\"), record it " +
+                    "here - the shell cannot detect a Settings dialog.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MetroColors.Dim,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            Row(modifier = Modifier.padding(top = 6.dp)) {
+                Action("the ROM refused it", MetroColors.Divider) { onRecordOemRefusal(true) }
+                Box(Modifier.padding(start = 10.dp)) {
+                    Action("it was accepted", accent) { onRecordOemRefusal(false) }
+                }
+            }
+
+            if (home.verdict == com.metro.opticalshell.integration.HomeVerdict.OEM_REFUSED_SELECTION) {
+                Text(
+                    text = "Shell-level route (needs ADB, not root). This is AOSP's own " +
+                        "PackageManager command and does not pass through Settings' " +
+                        "vendor policy check. The vendor may still block it, and if it " +
+                        "does, that is the real answer.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MetroColors.Dim,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                home.shellSetHomeCommands().forEach { Mono(it) }
+            }
+
             Text(
                 text = "Verify independently:",
                 style = MaterialTheme.typography.bodyMedium,

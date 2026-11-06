@@ -4,7 +4,7 @@
   "specification": "TZ v4.0",
   "headSha": "a014f48f90a512fc27d91c4794677a270ecc0a42",
   "device": null,
-  "deviceNote": "No Android device or emulator has been available in any session. Every deviceObserved field is false.",
+  "deviceNote": "First device observations recorded 2026-11-06 (Redmi/HyperOS): the Home candidate is visible, and the ROM refuses the selection. Everything else remains unobserved.",
   "statusVocabulary": [
     "SOURCE_IMPLEMENTED",
     "TESTED",
@@ -25,8 +25,9 @@
       "id": "FIX-01",
       "defect": "HomeAlias shipped android:enabled=false with no code to enable it, so Metro never appeared in the Home chooser",
       "resolution": "Alias ships enabled (a HOME filter only makes a candidate; the system still asks the user) plus HomeRoleController for role request, withdrawal and independent diagnosis",
-      "status": "SOURCE_IMPLEMENTED",
-      "deviceObserved": false
+      "status": "DEVICE_OBSERVED",
+      "deviceObserved": true,
+      "deviceNote": "Confirmed on a Redmi/HyperOS device on 2026-11-06: Metro now appears in the Default Home screen list. Selection is then refused by the ROM's launcher verification, which is a separate, OEM-side block."
     },
     {
       "id": "FIX-02",
@@ -126,9 +127,10 @@
       "id": "be_home",
       "tier": "L1_USER_GRANTED",
       "grant": "HOME_ROLE",
-      "state": "PRIVILEGE_REQUIRED",
-      "status": "SOURCE_IMPLEMENTED",
-      "deviceObserved": false
+      "state": "CANDIDATE_VISIBLE_SELECTION_REFUSED",
+      "status": "DEVICE_OBSERVED",
+      "deviceObserved": true,
+      "note": "Metro IS listed in the HyperOS Default Home screen chooser (FIX-01 confirmed on hardware, 2026-11-06), but the ROM refuses the selection: 'only verified apps can be set as your default launcher'. This is a Xiaomi policy check inside Settings, not a missing permission. Alternative: cmd package set-home-activity via ADB (L2) - UNVERIFIED."
     },
     {
       "id": "read_notifications",
@@ -224,8 +226,9 @@
     "replace_status_bar"
   ],
   "openQuestionsRequiringDevice": [
-    "Does Metro appear in the HyperOS Home chooser now that the alias ships enabled?",
-    "Does HyperOS keep gesture navigation when Metro is assigned as Home? (BLOCKING)",
+    "ANSWERED 2026-11-06: Metro appears in the HyperOS Home chooser. Selection is refused by the ROM.",
+    "Does `cmd package set-home-activity` succeed where Settings refuses? (next experiment)",
+    "Does HyperOS keep gesture navigation if Metro does become Home? (BLOCKING)",
     "Is FEATURE_FREEFORM_WINDOW_MANAGEMENT present on the internal display?",
     "Does split-screen work with real third-party apps through the orchestrator?",
     "Which third-party apps change layout structurally at >=600dp?",
