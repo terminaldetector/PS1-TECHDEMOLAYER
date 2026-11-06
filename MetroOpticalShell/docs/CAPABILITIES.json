@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 2,
+  "generated": "2026-11-06",
+  "specification": "TZ v4.0",
+  "headSha": "244c8965323a980e521b71eb190b0bc2d1d90a4a (parent; this operation's commit follows)",
+  "device": null,
+  "deviceNote": "No Android device or emulator has been available in any session. Every deviceObserved field is false.",
+  "statusVocabulary": [
+    "SOURCE_IMPLEMENTED",
+    "TESTED",
+    "SYSTEM_REQUESTED",
+    "DEVICE_OBSERVED",
+    "FAILED",
+    "BLOCKED"
+  ],
+  "tiers": {
+    "L0_APP": "Ordinary APK",
+    "L1_USER_GRANTED": "Home / Notification / Overlay / Accessibility / Usage Access - each granted independently",
+    "L2_SHELL_BRIDGE": "ADB or Shizuku shell UID. Not a platform signature",
+    "L3_ROOT": "Root",
+    "L4_PLATFORM": "ROM / platform signature. Not an app capability"
+  },
+  "fixes": [
+    {
+      "id": "FIX-01",
+      "defect": "HomeAlias shipped android:enabled=false with no code to enable it, so Metro never appeared in the Home chooser",
+      "resolution": "Alias ships enabled (a HOME filter only makes a candidate; the system still asks the user) plus HomeRoleController for role request, withdrawal and independent diagnosis",
+      "status": "SOURCE_IMPLEMENTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "FIX-02",
+      "defect": "A shared highestTier meant any L1 grant unlocked every L1 capability",
+      "resolution": "Each capability declares one RequiredGrant; stateFor checks that grant alone",
+      "status": "TESTED",
+      "deviceObserved": false,
+      "tests": 7
+    },
+    {
+      "id": "FIX-03",
+      "defect": "ShellViewModel.launch() called the launcher directly, so LandscapePolicyEngine.decide() was dead code",
+      "resolution": "Single AppLaunchOrchestrator implementing the seven steps of TZ v4 4.3; a bypass is recorded and surfaced in diagnostics",
+      "status": "SOURCE_IMPLEMENTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "FIX-04",
+      "defect": "probe() returned REQUESTED from capability flags alone, before anything was requested",
+      "resolution": "New CAPABLE state; REQUESTED only after launchWindowed actually asks",
+      "status": "TESTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "FIX-05",
+      "defect": "Any recreatedOnRotate classified an app as unstable, though Activity recreation is normal Android behaviour",
+      "resolution": "Instability requires stateLost, crashed, brokenGeometry, inputLost or restartLoop",
+      "status": "TESTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "FIX-06",
+      "defect": "Gesture geometry was remembered against the View instance, which is identical across a rotation, so it went stale",
+      "resolution": "All values from state-backed Compose sources; correct after rotation, IME, density and resize",
+      "status": "TESTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "FIX-07",
+      "defect": "debug and release carry different applicationIds, inviting false conclusions",
+      "resolution": "HomeStatus.installedPackage reports the running package in every diagnosis",
+      "status": "SOURCE_IMPLEMENTED",
+      "deviceObserved": false
+    }
+  ],
+  "lintCaughtBugs": [
+    {
+      "api": "View.setSystemGestureExclusionRects",
+      "requires": 29,
+      "minSdk": 26,
+      "impact": "crash on Android 8-9",
+      "status": "fixed"
+    },
+    {
+      "api": "AppOpsManager.unsafeCheckOpNoThrow",
+      "requires": 29,
+      "minSdk": 26,
+      "impact": "crash on Android 8-9",
+      "status": "fixed"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "list_apps",
+      "tier": "L0_APP",
+      "grant": "NONE",
+      "state": "AVAILABLE",
+      "status": "TESTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "launch_app",
+      "tier": "L0_APP",
+      "grant": "NONE",
+      "state": "AVAILABLE",
+      "status": "SOURCE_IMPLEMENTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "detect_freeform",
+      "tier": "L0_APP",
+      "grant": "NONE",
+      "state": "AVAILABLE",
+      "status": "TESTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "request_launch_bounds",
+      "tier": "L0_APP",
+      "grant": "NONE",
+      "state": "AVAILABLE",
+      "status": "SOURCE_IMPLEMENTED",
+      "deviceObserved": false,
+      "note": "A hint only. setLaunchBounds does not enable freeform."
+    },
+    {
+      "id": "be_home",
+      "tier": "L1_USER_GRANTED",
+      "grant": "HOME_ROLE",
+      "state": "PRIVILEGE_REQUIRED",
+      "status": "SOURCE_IMPLEMENTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "read_notifications",
+      "tier": "L1_USER_GRANTED",
+      "grant": "NOTIFICATION_ACCESS",
+      "state": "PRIVILEGE_REQUIRED",
+      "status": "SOURCE_IMPLEMENTED",
+      "deviceObserved": false
+    },
+    {
+      "id": "open_system_panels",
+      "tier": "L1_USER_GRANTED",
+      "grant": "ACCESSIBILITY_SERVICE",
+      "state": "PRIVILEGE_REQUIRED",
+      "status": "BLOCKED",
+      "deviceObserved": false,
+      "note": "Adapter written; the accessibility service is not registered."
+    },
+    {
+      "id": "draw_overlay",
+      "tier": "L1_USER_GRANTED",
+      "grant": "OVERLAY_PERMISSION",
+      "state": "PRIVILEGE_REQUIRED",
+      "status": "BLOCKED",
+      "deviceObserved": false
+    },
+    {
+      "id": "infer_app_recency",
+      "tier": "L1_USER_GRANTED",
+      "grant": "USAGE_STATS_ACCESS",
+      "state": "PRIVILEGE_REQUIRED",
+      "status": "SOURCE_IMPLEMENTED",
+      "deviceObserved": false,
+      "note": "Inference, not a window list."
+    },
+    {
+      "id": "set_windowing_mode",
+      "tier": "L2_SHELL_BRIDGE",
+      "grant": "SHELL_BRIDGE",
+      "state": "PRIVILEGE_REQUIRED",
+      "status": "BLOCKED",
+      "deviceObserved": false,
+      "evidence": "smartdock@517604a AppUtils.kt:375; Taskbar@e2a00b9 U.java:988"
+    },
+    {
+      "id": "list_running_tasks",
+      "tier": "L2_SHELL_BRIDGE",
+      "grant": "SHELL_BRIDGE",
+      "state": "PRIVILEGE_REQUIRED",
+      "status": "BLOCKED",
+      "deviceObserved": false,
+      "evidence": "smartdock ActivityManagerWrapper.kt"
+    },
+    {
+      "id": "set_system_density",
+      "tier": "L2_SHELL_BRIDGE",
+      "grant": "SHELL_BRIDGE",
+      "state": "PRIVILEGE_REQUIRED",
+      "status": "TESTED",
+      "deviceObserved": false,
+      "evidence": "Taskbar U.java:1933",
+      "note": "Tier 0 bridge refuses all writes and returns the operator procedure."
+    },
+    {
+      "id": "resize_task",
+      "tier": "L3_ROOT",
+      "grant": "ROOT",
+      "state": "PRIVILEGE_REQUIRED",
+      "status": "BLOCKED",
+      "deviceObserved": false,
+      "evidence": "smartdock AppUtils.kt:381 (runAsRoot)"
+    },
+    {
+      "id": "be_recents_provider",
+      "tier": "L4_PLATFORM",
+      "grant": "PLATFORM_SIGNATURE",
+      "state": "IMPOSSIBLE_AT_APP_TIER",
+      "status": "BLOCKED",
+      "deviceObserved": false,
+      "evidence": "AOSP Launcher3 quickstep/AndroidManifest.xml requires STATUS_BAR_SERVICE, MONITOR_INPUT, MANAGE_ACTIVITY_TASKS, ALLOW_SLIPPERY_TOUCHES"
+    },
+    {
+      "id": "replace_status_bar",
+      "tier": "L4_PLATFORM",
+      "grant": "PLATFORM_SIGNATURE",
+      "state": "IMPOSSIBLE_AT_APP_TIER",
+      "status": "BLOCKED",
+      "deviceObserved": false
+    }
+  ],
+  "impossibleAtAppTier": [
+    "be_recents_provider",
+    "replace_status_bar"
+  ],
+  "openQuestionsRequiringDevice": [
+    "Does Metro appear in the HyperOS Home chooser now that the alias ships enabled?",
+    "Does HyperOS keep gesture navigation when Metro is assigned as Home? (BLOCKING)",
+    "Is FEATURE_FREEFORM_WINDOW_MANAGEMENT present on the internal display?",
+    "Does split-screen work with real third-party apps through the orchestrator?",
+    "Which third-party apps change layout structurally at >=600dp?",
+    "Does a density change survive and roll back cleanly?"
+  ],
+  "testSummary": {
+    "unitTests": 226,
+    "failures": 0,
+    "lintErrors": 0,
+    "lintWarnings": 30,
+    "lintWarningNote": "All 30 are GradleDependency / AndroidGradlePluginVersion version notices from deliberate pinning.",
+    "instrumentedTests": 0,
+    "instrumentedNote": "None written: no emulator was available, and unrun instrumented tests would be an unverified claim."
+  }
+}

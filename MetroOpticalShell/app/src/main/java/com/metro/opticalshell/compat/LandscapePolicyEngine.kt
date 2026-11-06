@@ -184,7 +184,12 @@ object LandscapePolicyEngine {
     fun classify(observations: List<LayoutObservation>): AppCompatClass? {
         if (observations.isEmpty()) return null
 
-        if (observations.any { it.recreatedOnRotate == true }) {
+        // FIX-05: recreation alone is not a defect. An Activity being recreated
+        // on a configuration change is documented Android behaviour, and the
+        // overwhelming majority of apps handle it correctly. Only an actual
+        // failure - lost state, a crash, broken geometry, lost input or a
+        // restart loop - makes an app class D.
+        if (observations.any { it.indicatesInstability }) {
             return AppCompatClass.D_UNSTABLE_ON_ROTATE
         }
 

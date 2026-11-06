@@ -112,11 +112,36 @@ data class LayoutObservation(
     val landscapeMode: LandscapeMode,
     /** null = unknown, not "no". */
     val layoutChanged: Boolean? = null,
-    /** null = unknown. */
+    /**
+     * Whether the Activity was recreated on rotation.
+     *
+     * FIX-05: this is **normal Android behaviour**, not a defect, so on its own
+     * it must never classify an app as unstable. The genuine failure signals are
+     * [stateLost], [crashed], [brokenGeometry], [inputLost] and
+     * [restartLoop].
+     */
     val recreatedOnRotate: Boolean? = null,
+    /** State the user had entered was lost. A real defect. */
+    val stateLost: Boolean? = null,
+    /** The app crashed. A real defect. */
+    val crashed: Boolean? = null,
+    /** Clipped, stretched or mis-positioned UI. A real defect. */
+    val brokenGeometry: Boolean? = null,
+    /** Touch or keyboard input stopped working. A real defect. */
+    val inputLost: Boolean? = null,
+    /** The Activity restarted repeatedly. A real defect. */
+    val restartLoop: Boolean? = null,
     val textStillReadable: Boolean? = null,
     /** A screenshot path or note. Required before a success may be claimed. */
     val evidence: String? = null,
     val deviceBuild: String? = null,
     val note: String? = null,
-)
+) {
+    /**
+     * FIX-05: a genuine instability signal, as distinct from ordinary
+     * recreation.
+     */
+    val indicatesInstability: Boolean
+        get() = stateLost == true || crashed == true || brokenGeometry == true ||
+            inputLost == true || restartLoop == true
+}

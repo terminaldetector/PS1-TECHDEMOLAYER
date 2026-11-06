@@ -27,6 +27,7 @@ import com.metro.opticalshell.core.CapabilityReport
 import com.metro.opticalshell.display.ApplyResult
 import com.metro.opticalshell.display.DisplayMath
 import com.metro.opticalshell.display.TabletVerdict
+import com.metro.opticalshell.integration.HomeStatus
 import com.metro.opticalshell.ui.LocalAccent
 import com.metro.opticalshell.ui.MetroColors
 
@@ -48,6 +49,12 @@ fun DeviceCapabilityScreen(
     onCopyReport: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    homeStatus: HomeStatus? = null,
+    policyBypassed: Boolean = false,
+    onRegisterHomeCandidate: () -> Unit = {},
+    onUnregisterHomeCandidate: () -> Unit = {},
+    onRequestHomeRole: () -> Unit = {},
+    onOpenHomeSettings: () -> Unit = {},
 ) {
     val accent = LocalAccent.current
     var pendingDensity by remember { mutableStateOf<Int?>(null) }
@@ -68,6 +75,64 @@ fun DeviceCapabilityScreen(
                     .padding(end = 14.dp),
             )
             Text(text = "diagnostics", style = MaterialTheme.typography.headlineMedium)
+        }
+
+        // ---- Home role (TZ v4 7, FIX-01) ----
+        homeStatus?.let { home ->
+            Section("home role")
+            Mono(home.verdict.name)
+            Text(
+                text = home.verdict.message,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+            KeyValue("installed package", home.installedPackage)
+            KeyValue("candidate enabled", home.candidateRegistered.toString())
+            KeyValue("role available", home.roleAvailable.toString())
+            KeyValue("is current home", home.isCurrentHome.toString())
+            KeyValue("resolved home", home.resolvedHomePackage ?: "unknown")
+            KeyValue("home candidates", home.availableHomePackages.joinToString(", "))
+            KeyValue("rom hint", home.romHint ?: "none")
+
+            Row(modifier = Modifier.padding(top = 8.dp)) {
+                if (home.candidateRegistered) {
+                    Action("withdraw candidacy", MetroColors.Divider, onUnregisterHomeCandidate)
+                } else {
+                    Action("register as candidate", accent, onRegisterHomeCandidate)
+                }
+            }
+            Row(modifier = Modifier.padding(top = 8.dp)) {
+                if (home.roleAvailable) {
+                    Action("ask to be Home", accent, onRequestHomeRole)
+                } else {
+                    Action("open Home settings", accent, onOpenHomeSettings)
+                }
+            }
+            Text(
+                text = "Registering only makes Metro appear in Android's own chooser. " +
+                    "Nothing here selects it; the system asks you.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MetroColors.Dim,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Text(
+                text = "Verify independently:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MetroColors.Dim,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            home.diagnosticCommands().forEach { Mono(it) }
+        }
+
+        if (policyBypassed) {
+            Section("warning")
+            Text(
+                text = "At least one app launch did not go through the " +
+                    "AppLaunchOrchestrator, so no landscape policy was applied to it. " +
+                    "This indicates a wiring fault in the shell, not a device limit.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFFE3A21A),
+            )
         }
 
         Section("measured geometry")

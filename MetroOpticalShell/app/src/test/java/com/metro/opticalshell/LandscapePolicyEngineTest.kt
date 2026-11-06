@@ -233,20 +233,60 @@ class LandscapePolicyEngineTest {
     }
 
     @Test
-    fun `recreation on rotate dominates classification`() {
+    fun `plain recreation on rotation is NOT a defect`() {
+        // FIX-05. An Activity being recreated on a configuration change is
+        // documented Android behaviour that most apps handle correctly. The
+        // previous version classified any such app as unstable, which would
+        // have mislabelled the majority of well-behaved apps.
         val obs = listOf(
             LayoutObservation(
                 atMillis = 1, windowWidthDp = 800, windowHeightDp = 400, densityDpi = 288,
                 landscapeMode = LandscapeMode.FOCUSED_FULLSCREEN,
                 layoutChanged = true, evidence = "x.png",
-            ),
-            LayoutObservation(
-                atMillis = 2, windowWidthDp = 800, windowHeightDp = 400, densityDpi = 288,
-                landscapeMode = LandscapeMode.FOCUSED_FULLSCREEN,
                 recreatedOnRotate = true,
             ),
         )
-        assertEquals(AppCompatClass.D_UNSTABLE_ON_ROTATE, LandscapePolicyEngine.classify(obs))
+        assertEquals(
+            "recreation alone must not make an app class D",
+            AppCompatClass.A_ADAPTIVE,
+            LandscapePolicyEngine.classify(obs),
+        )
+    }
+
+    @Test
+    fun `each genuine failure signal does make an app unstable`() {
+        // FIX-05: these are the real defects, as distinct from recreation.
+        fun obsWith(
+            stateLost: Boolean? = null,
+            crashed: Boolean? = null,
+            brokenGeometry: Boolean? = null,
+            inputLost: Boolean? = null,
+            restartLoop: Boolean? = null,
+        ) = listOf(
+            LayoutObservation(
+                atMillis = 1, windowWidthDp = 800, windowHeightDp = 400, densityDpi = 288,
+                landscapeMode = LandscapeMode.FOCUSED_FULLSCREEN,
+                recreatedOnRotate = true,
+                stateLost = stateLost, crashed = crashed, brokenGeometry = brokenGeometry,
+                inputLost = inputLost, restartLoop = restartLoop,
+            ),
+        )
+
+        assertEquals(AppCompatClass.D_UNSTABLE_ON_ROTATE, LandscapePolicyEngine.classify(obsWith(stateLost = true)))
+        assertEquals(AppCompatClass.D_UNSTABLE_ON_ROTATE, LandscapePolicyEngine.classify(obsWith(crashed = true)))
+        assertEquals(AppCompatClass.D_UNSTABLE_ON_ROTATE, LandscapePolicyEngine.classify(obsWith(brokenGeometry = true)))
+        assertEquals(AppCompatClass.D_UNSTABLE_ON_ROTATE, LandscapePolicyEngine.classify(obsWith(inputLost = true)))
+        assertEquals(AppCompatClass.D_UNSTABLE_ON_ROTATE, LandscapePolicyEngine.classify(obsWith(restartLoop = true)))
+    }
+
+    @Test
+    fun `an observation with no failure signal does not indicate instability`() {
+        val benign = LayoutObservation(
+            atMillis = 1, windowWidthDp = 400, windowHeightDp = 800, densityDpi = 440,
+            landscapeMode = LandscapeMode.FOCUSED_FULLSCREEN,
+            recreatedOnRotate = true,
+        )
+        assertFalse(benign.indicatesInstability)
     }
 
     @Test

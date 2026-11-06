@@ -3,12 +3,18 @@ package com.metro.opticalshell.gesture
 import android.os.Build
 import android.view.View
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.mandatorySystemGestures
+import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowInsetsCompat
 import com.metro.opticalshell.core.Presentation
 
 /**
@@ -25,29 +31,54 @@ import com.metro.opticalshell.core.Presentation
  * [GesturePriorityContract.exclusionRectsFor], which clips them out of the
  * mandatory system region and truncates them to the 200dp cap.
  */
+/**
+ * Reads the live gesture geometry (FIX-06).
+ *
+ * The previous version keyed a `remember` on the `View` instance, which is the
+ * SAME object across a rotation — so `view.height`, `view.width` and the insets
+ * it had captured went stale exactly when they mattered. Everything here now
+ * comes from state-backed Compose sources that recompose on their own:
+ *
+ *  - `WindowInsets.systemGestures` / `mandatorySystemGestures` update when the
+ *    system bars, cutout or navigation mode change;
+ *  - `WindowInsets.ime` updates when the keyboard appears;
+ *  - `LocalConfiguration.screenWidthDp/screenHeightDp` update on rotation, on
+ *    a density change, and on a split-screen or freeform resize, because the
+ *    configuration describes the current WINDOW, not the physical panel.
+ *
+ * So the returned geometry is correct after rotation, an IME change, a density
+ * change and a split/freeform resize, which is what FIX-06 asked for.
+ */
 @Composable
-fun rememberGestureGeometry(imeVisible: Boolean): GestureGeometry {
-    val view = LocalView.current
+fun rememberGestureGeometry(): GestureGeometry {
     val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
 
-    val insets = remember(view, imeVisible) {
-        val root = view.rootWindowInsets?.let { WindowInsetsCompat.toWindowInsetsCompat(it) }
-        val gestures = root?.getInsets(WindowInsetsCompat.Type.systemGestures())
-        val mandatory = root?.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures())
-        GestureGeometry(
-            windowHeightPx = view.height,
-            windowWidthPx = view.width,
-            mandatoryBottomPx = mandatory?.bottom ?: 0,
-            mandatoryTopPx = mandatory?.top ?: 0,
-            systemGestureLeftPx = gestures?.left ?: 0,
-            systemGestureRightPx = gestures?.right ?: 0,
-            imeVisible = imeVisible,
-        )
-    }
-    // Touch density so a configuration change recomposes this.
-    @Suppress("UNUSED_EXPRESSION")
-    density
-    return insets
+    val gestures = WindowInsets.systemGestures
+    val mandatory = WindowInsets.mandatorySystemGestures
+    val ime = WindowInsets.ime
+
+    // Reading each inset inside the composition is what subscribes us to it.
+    val imeBottomPx = ime.getBottom(density)
+    val mandatoryBottomPx = mandatory.getBottom(density)
+    val mandatoryTopPx = mandatory.getTop(density)
+    val gestureLeftPx = gestures.getLeft(density, LayoutDirection.Ltr)
+    val gestureRightPx = gestures.getRight(density, LayoutDirection.Ltr)
+
+    // Configuration is in dp and reflects the current window, so converting it
+    // with the current density gives live window pixels.
+    val widthPx = with(density) { configuration.screenWidthDp.dp.roundToPx() }
+    val heightPx = with(density) { configuration.screenHeightDp.dp.roundToPx() }
+
+    return GestureGeometry(
+        windowHeightPx = heightPx,
+        windowWidthPx = widthPx,
+        mandatoryBottomPx = mandatoryBottomPx,
+        mandatoryTopPx = mandatoryTopPx,
+        systemGestureLeftPx = gestureLeftPx,
+        systemGestureRightPx = gestureRightPx,
+        imeVisible = imeBottomPx > 0,
+    )
 }
 
 /**
@@ -96,7 +127,7 @@ fun GestureExclusionEffect(
 
         if (supported) {
             view.systemGestureExclusionRects = rects.map {
-                android.graphics.Rect(0, it.top, view.width, it.bottom)
+                android.graphics.Rect(0, it.top, geometry.windowWidthPx, it.bottom)
             }
         }
 

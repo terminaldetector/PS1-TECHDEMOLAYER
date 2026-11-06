@@ -1,6 +1,7 @@
 package com.metro.opticalshell
 
 import android.app.Application
+import com.metro.opticalshell.data.AppCompatRepository
 import com.metro.opticalshell.data.OpticalProfileRepository
 import com.metro.opticalshell.data.SettingsRepository
 import com.metro.opticalshell.data.TileRepository
@@ -26,6 +27,7 @@ class ShellApplication : Application() {
     val workspaceRepository: WorkspaceRepository by lazy { WorkspaceRepository(this) }
     val opticalRepository: OpticalProfileRepository by lazy { OpticalProfileRepository(this) }
     val appLauncher: StandardAppLauncher by lazy { StandardAppLauncher(this) }
+    val appCompatRepository: AppCompatRepository by lazy { AppCompatRepository(this) }
 
     val installedApps: InstalledAppsRepository by lazy {
         InstalledAppsRepository(this, appScope)

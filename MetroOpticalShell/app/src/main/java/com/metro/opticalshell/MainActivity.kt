@@ -39,6 +39,8 @@ import com.metro.opticalshell.display.NoPrivilegeDisplayBridge
 import com.metro.opticalshell.capability.CapabilityGate
 import com.metro.opticalshell.expanded.DesktopMetroScreen
 import com.metro.opticalshell.gesture.rememberGestureGeometry
+import com.metro.opticalshell.integration.HomeRoleController
+import com.metro.opticalshell.runtime.AppLaunchOrchestrator
 import com.metro.opticalshell.metro.FolderContents
 import com.metro.opticalshell.panels.MetroActionCenter
 import com.metro.opticalshell.panels.MetroTopBar
@@ -50,9 +52,6 @@ import com.metro.opticalshell.expanded.TabletMetroScreen
 import com.metro.opticalshell.mobile.MobileMetroScreen
 import com.metro.opticalshell.optical.CalibrationScreen
 import com.metro.opticalshell.optical.SafeViewport
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.ui.graphics.Color as ComposeColor
 import com.metro.opticalshell.runtime.FreeformLaunchAdapter
 import com.metro.opticalshell.ui.MetroTheme
@@ -76,6 +75,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var freeformAdapter: FreeformLaunchAdapter
     private lateinit var displayController: DisplayAdaptationController
     private lateinit var panelsAdapter: PublicIntentPanelsAdapter
+    private lateinit var homeController: HomeRoleController
+    private lateinit var orchestrator: AppLaunchOrchestrator
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,6 +86,7 @@ class MainActivity : ComponentActivity() {
 
         freeformAdapter = FreeformLaunchAdapter(this, app.appLauncher)
         panelsAdapter = PublicIntentPanelsAdapter(this)
+        homeController = HomeRoleController(this)
 
         val readout = DisplayMetricsReader.read(this)
         val experimentRepo = DisplayExperimentRepository(this)
@@ -106,8 +108,31 @@ class MainActivity : ComponentActivity() {
                     optical = app.opticalRepository,
                     installedApps = app.installedApps,
                     launcher = app.appLauncher,
+                    appCompat = app.appCompatRepository,
                 ),
             )
+
+            // FIX-03: install the single orchestrator before anything can launch.
+            androidx.compose.runtime.SideEffect {
+                if (vm.launchHandler == null) {
+                    orchestrator = AppLaunchOrchestrator(
+                        standardLauncher = app.appLauncher,
+                        freeformAdapter = freeformAdapter,
+                        profileProvider = vm::profileFor,
+                        heldPrivileges = { heldPrivileges() },
+                        readoutProvider = {
+                            runCatching { DisplayMetricsReader.read(this@MainActivity) }.getOrNull()
+                        },
+                        freeformSupported = {
+                            val p = freeformAdapter.probe()
+                            p.hasSystemFeature || p.freeformSettingEnabled
+                        },
+                        onLaunched = { vm.recordLaunchOutcome(it.outcome) },
+                    )
+                    vm.launchHandler = { request -> orchestrator.launch(request, this@MainActivity) }
+                }
+            }
+
             ShellRoot(vm)
         }
     }
@@ -126,6 +151,8 @@ class MainActivity : ComponentActivity() {
 
         var route by remember { mutableStateOf(ShellRoute.SHELL) }
         var report by remember { mutableStateOf<CapabilityReport?>(null) }
+        var homeStatus by remember { mutableStateOf(homeController.status()) }
+        val policyBypassed by vm.policyBypassed.collectAsState()
         var actionCenterOpen by remember { mutableStateOf(false) }
 
         // Persistable read access, so the chosen wallpaper survives a reboot.
@@ -154,10 +181,9 @@ class MainActivity : ComponentActivity() {
             NotificationAccess.isGranted(this@MainActivity)
         }
 
-        // Gesture geometry drives the exclusion contract (TZ 7.2). The IME
-        // flag matters: while a keyboard is up the shell claims nothing.
-        val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-        val gestureGeometry = rememberGestureGeometry(imeVisible = imeBottom.value > 0f)
+        // FIX-06: live geometry, state-backed, correct after rotation, an IME
+        // change, a density change and a split/freeform resize.
+        val gestureGeometry = rememberGestureGeometry()
 
         val configuration = LocalConfiguration.current
         val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -257,6 +283,28 @@ class MainActivity : ComponentActivity() {
                                     )
                                 },
                                 onCopyReport = { copyToClipboard("metro-capability-report", it) },
+                                homeStatus = homeStatus,
+                                policyBypassed = policyBypassed,
+                                onRegisterHomeCandidate = {
+                                    homeController.registerAsCandidate()
+                                    homeStatus = homeController.status()
+                                },
+                                onUnregisterHomeCandidate = {
+                                    homeController.unregisterAsCandidate()
+                                    homeStatus = homeController.status()
+                                },
+                                onRequestHomeRole = {
+                                    homeController.roleRequestIntent()?.let {
+                                        runCatching { startActivity(it) }
+                                    } ?: runCatching {
+                                        startActivity(homeController.systemHomeSettingsIntent())
+                                    }
+                                },
+                                onOpenHomeSettings = {
+                                    runCatching {
+                                        startActivity(homeController.systemHomeSettingsIntent())
+                                    }
+                                },
                                 onBack = { route = ShellRoute.SHELL },
                             )
                         }
@@ -443,6 +491,42 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * FIX-02: each grant is read from its own live source, independently. No
+     * permission is inferred from another.
+     */
+    private fun heldPrivileges(): CapabilityGate.HeldPrivileges =
+        CapabilityGate.HeldPrivileges(
+            isHome = SystemCapabilityProbe.isDefaultHome(this),
+            hasNotificationAccess = NotificationAccess.isGranted(this),
+            hasOverlayPermission = android.provider.Settings.canDrawOverlays(this),
+            hasAccessibilityService = false,
+            hasUsageStatsAccess = hasUsageStatsAccess(),
+            shellBridgeConnected = false,
+            rootAvailable = false,
+        )
+
+    private fun hasUsageStatsAccess(): Boolean = runCatching {
+        val appOps = getSystemService(android.content.Context.APP_OPS_SERVICE)
+            as android.app.AppOpsManager
+        // unsafeCheckOpNoThrow is API 29+; checkOpNoThrow is the API 26-28 path.
+        val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName,
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            appOps.checkOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName,
+            )
+        }
+        mode == android.app.AppOpsManager.MODE_ALLOWED
+    }.getOrDefault(false)
 
     private fun copyToClipboard(label: String, text: String) {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

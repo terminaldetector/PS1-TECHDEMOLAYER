@@ -68,6 +68,29 @@ enum class VerificationLevel {
     DEVICE_VERIFIED,
 }
 
+/**
+ * The specific grant a capability needs (FIX-02).
+ *
+ * The bug this type fixes: the previous model asked only "what is the highest
+ * tier we hold?", so granting ANY L1 permission made EVERY L1 capability report
+ * AVAILABLE — notification access implied the overlay and the Home role. Each
+ * capability now names the one grant that actually governs it, and the gate
+ * checks that grant and no other.
+ */
+enum class RequiredGrant {
+    /** Nothing beyond being installed. */
+    NONE,
+    HOME_ROLE,
+    NOTIFICATION_ACCESS,
+    OVERLAY_PERMISSION,
+    ACCESSIBILITY_SERVICE,
+    USAGE_STATS_ACCESS,
+    SHELL_BRIDGE,
+    ROOT,
+    /** Platform signature. Never grantable. */
+    PLATFORM_SIGNATURE,
+}
+
 /** One gated capability. */
 @Serializable
 data class Capability(
@@ -81,6 +104,8 @@ data class Capability(
     val detail: String,
     /** Primary source that establishes the tier, where one exists. */
     val evidence: String? = null,
+    /** FIX-02: the single grant that governs this capability. */
+    val requiredGrant: String = RequiredGrant.NONE.name,
 )
 
 /**
@@ -130,17 +155,20 @@ object CapabilityGate {
             PrivilegeTier.L0_APP,
             "LauncherApps plus a <queries> manifest declaration.",
             null,
+            RequiredGrant.NONE,
         ),
         Ids.LAUNCH_APP to TierFact(
             PrivilegeTier.L0_APP,
             "Intent and PackageManager.",
             null,
+            RequiredGrant.NONE,
         ),
         Ids.DETECT_FREEFORM to TierFact(
             PrivilegeTier.L0_APP,
             "FEATURE_FREEFORM_WINDOW_MANAGEMENT and Settings.Global " +
                 "enable_freeform_support are both readable without privileges.",
             "farmerbb/Taskbar U.java:850 (e2a00b9)",
+            RequiredGrant.NONE,
         ),
         Ids.REQUEST_LAUNCH_BOUNDS to TierFact(
             PrivilegeTier.L0_APP,
@@ -148,29 +176,34 @@ object CapabilityGate {
                 "preference. Android ignores it where freeform is off, so a " +
                 "successful call is not a window.",
             "developer.android.com ActivityOptions",
+            RequiredGrant.NONE,
         ),
         Ids.SET_WINDOWING_MODE to TierFact(
             PrivilegeTier.L2_SHELL_BRIDGE,
             "ActivityOptions.setLaunchWindowingMode is a hidden API reached by " +
                 "reflection. Not public SDK.",
             "axel358/smartdock AppUtils.kt:375; farmerbb/Taskbar U.java:988",
+            RequiredGrant.SHELL_BRIDGE,
         ),
         Ids.RESIZE_TASK to TierFact(
             PrivilegeTier.L3_ROOT,
             "Resizing an existing task shells out to `am task resize` as root.",
             "axel358/smartdock AppUtils.kt:381 (runAsRoot)",
+            RequiredGrant.ROOT,
         ),
         Ids.LIST_RUNNING_TASKS to TierFact(
             PrivilegeTier.L2_SHELL_BRIDGE,
             "A true task list needs IActivityManager through a Shizuku binder. " +
                 "ActivityManager.getRunningTasks returns only our own tasks.",
             "axel358/smartdock ActivityManagerWrapper.kt",
+            RequiredGrant.SHELL_BRIDGE,
         ),
         Ids.INFER_APP_RECENCY to TierFact(
             PrivilegeTier.L1_USER_GRANTED,
             "UsageStatsManager with PACKAGE_USAGE_STATS gives inferred recency. " +
                 "This is NOT a list of live windows and must never be shown as one.",
             "axel358/smartdock AppUtils.getRecentTasks",
+            RequiredGrant.USAGE_STATS_ACCESS,
         ),
         Ids.SET_SYSTEM_DENSITY to TierFact(
             PrivilegeTier.L2_SHELL_BRIDGE,
@@ -179,6 +212,7 @@ object CapabilityGate {
                 "WRITE_SECURE_SETTINGS, which an ordinary install cannot hold. " +
                 "WRITE_SETTINGS does not cover density.",
             "farmerbb/Taskbar U.java:1933",
+            RequiredGrant.SHELL_BRIDGE,
         ),
         Ids.BE_RECENTS_PROVIDER to TierFact(
             PrivilegeTier.L4_PLATFORM,
@@ -188,17 +222,20 @@ object CapabilityGate {
                 "signature permissions. Handling swipes in our own window is a " +
                 "different thing and is not this.",
             "AOSP Launcher3 quickstep/AndroidManifest.xml",
+            RequiredGrant.PLATFORM_SIGNATURE,
         ),
         Ids.BE_HOME to TierFact(
             PrivilegeTier.L1_USER_GRANTED,
             "The Home role is the user's choice. The OEM may still refuse it or " +
                 "change navigation behaviour when it is granted.",
             "developer.android.com RoleManager",
+            RequiredGrant.HOME_ROLE,
         ),
         Ids.READ_NOTIFICATIONS to TierFact(
             PrivilegeTier.L1_USER_GRANTED,
             "NotificationListenerService after explicit, revocable consent.",
             "developer.android.com NotificationListenerService",
+            RequiredGrant.NOTIFICATION_ACCESS,
         ),
         Ids.OPEN_SYSTEM_PANELS to TierFact(
             PrivilegeTier.L1_USER_GRANTED,
@@ -206,18 +243,21 @@ object CapabilityGate {
                 "QUICK_SETTINGS and RECENTS actions. That opens the system's own " +
                 "panels; it does not grant SystemUI's powers.",
             "developer.android.com AccessibilityService",
+            RequiredGrant.ACCESSIBILITY_SERVICE,
         ),
         Ids.DRAW_OVERLAY to TierFact(
             PrivilegeTier.L1_USER_GRANTED,
             "SYSTEM_ALERT_WINDOW. Android 12+ blocks untrusted touch " +
                 "pass-through, and an overlay must stay dismissible.",
             "developer.android.com behaviour-changes-12",
+            RequiredGrant.OVERLAY_PERMISSION,
         ),
         Ids.REPLACE_STATUS_BAR to TierFact(
             PrivilegeTier.L4_PLATFORM,
             "Replacing the status bar or keyguard is not an app capability at any " +
                 "grant level.",
             null,
+            RequiredGrant.PLATFORM_SIGNATURE,
         ),
     )
 
@@ -225,7 +265,26 @@ object CapabilityGate {
         val tier: PrivilegeTier,
         val detail: String,
         val evidence: String?,
+        /** FIX-02: the ONE grant that governs this capability. */
+        val grant: RequiredGrant,
     )
+
+    /** FIX-02: which grants are held, each tracked independently. */
+    fun grantsOf(held: HeldPrivileges): Map<RequiredGrant, Boolean> = mapOf(
+        RequiredGrant.NONE to true,
+        RequiredGrant.HOME_ROLE to held.isHome,
+        RequiredGrant.NOTIFICATION_ACCESS to held.hasNotificationAccess,
+        RequiredGrant.OVERLAY_PERMISSION to held.hasOverlayPermission,
+        RequiredGrant.ACCESSIBILITY_SERVICE to held.hasAccessibilityService,
+        RequiredGrant.USAGE_STATS_ACCESS to held.hasUsageStatsAccess,
+        // Root implies shell-level reach; the converse is not true.
+        RequiredGrant.SHELL_BRIDGE to (held.shellBridgeConnected || held.rootAvailable),
+        RequiredGrant.ROOT to held.rootAvailable,
+        RequiredGrant.PLATFORM_SIGNATURE to false,
+    )
+
+    fun grantOf(capabilityId: String): RequiredGrant =
+        tiers[capabilityId]?.grant ?: RequiredGrant.PLATFORM_SIGNATURE
 
     /** What the app currently holds. */
     data class HeldPrivileges(
@@ -237,7 +296,11 @@ object CapabilityGate {
         val shellBridgeConnected: Boolean = false,
         val rootAvailable: Boolean = false,
     ) {
-        /** The highest tier actually available. Never above L3 for any app. */
+        /**
+         * Informational only. NOT used for gating any more (FIX-02): a tier
+         * summary cannot answer "may we do X", because two capabilities of the
+         * same tier can need different grants.
+         */
         val highestTier: PrivilegeTier
             get() = when {
                 rootAvailable -> PrivilegeTier.L3_ROOT
@@ -276,14 +339,9 @@ object CapabilityGate {
             return CapabilityState.IMPOSSIBLE_AT_APP_TIER
         }
 
-        // Rule 1: a capability above what we hold is never AVAILABLE.
-        val holds = when (fact.tier) {
-            PrivilegeTier.L0_APP -> true
-            PrivilegeTier.L1_USER_GRANTED -> held.highestTier.ordinal >= PrivilegeTier.L1_USER_GRANTED.ordinal
-            PrivilegeTier.L2_SHELL_BRIDGE -> held.shellBridgeConnected || held.rootAvailable
-            PrivilegeTier.L3_ROOT -> held.rootAvailable
-            PrivilegeTier.L4_PLATFORM -> false
-        }
+        // Rule 1 (FIX-02): the ONE grant this capability needs, checked on its
+        // own. A different permission of the same tier proves nothing.
+        val holds = grantsOf(held)[fact.grant] ?: false
         if (!holds) return CapabilityState.PRIVILEGE_REQUIRED
 
         // The platform still gets the last word downwards.
@@ -309,6 +367,7 @@ object CapabilityGate {
                 verification = (verification[id] ?: VerificationLevel.IMPLEMENTED).name,
                 detail = fact.detail,
                 evidence = fact.evidence,
+                requiredGrant = fact.grant.name,
             )
         }
 

@@ -23,7 +23,13 @@ import com.metro.opticalshell.optical.OpticalProfile
 import com.metro.opticalshell.optical.OpticalProfileSet
 import com.metro.opticalshell.runtime.InstalledApp
 import com.metro.opticalshell.runtime.InstalledAppsRepository
+import com.metro.opticalshell.compat.AppCompatibilityProfile
+import com.metro.opticalshell.data.AppCompatRepository
+import com.metro.opticalshell.data.AppCompatStore
+import com.metro.opticalshell.runtime.AppLaunchRequest
+import com.metro.opticalshell.runtime.LaunchSource
 import com.metro.opticalshell.runtime.LaunchOutcome
+import com.metro.opticalshell.runtime.OrchestratedLaunch
 import com.metro.opticalshell.runtime.StandardAppLauncher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -50,7 +56,20 @@ class ShellViewModel(
     private val opticalRepo: OpticalProfileRepository,
     private val installedApps: InstalledAppsRepository,
     private val launcher: StandardAppLauncher,
+    private val appCompat: AppCompatRepository? = null,
 ) : ViewModel() {
+
+    /**
+     * FIX-03: every launch goes through the orchestrator.
+     *
+     * MainActivity installs this in onCreate, because a windowed launch needs an
+     * Activity and a ViewModel must not hold one. If it is ever absent the
+     * fallback still starts the app - the user is never stuck - but the launch
+     * is recorded with an explicit note that policy was bypassed, so a missed
+     * wiring shows up immediately instead of silently reverting to the old
+     * behaviour.
+     */
+    var launchHandler: ((AppLaunchRequest) -> OrchestratedLaunch)? = null
 
     /**
      * Orientation is NOT persisted: it is a property of the current window and
@@ -239,12 +258,53 @@ class ShellViewModel(
 
     // ---- launching --------------------------------------------------------
 
-    fun launch(packageName: String, activityName: String?) = viewModelScope.launch {
-        val outcome = launcher.launch(packageName, activityName)
+    /** FIX-03: routed through the single AppLaunchOrchestrator. */
+    fun launch(
+        packageName: String,
+        activityName: String?,
+        source: LaunchSource = LaunchSource.TILE,
+    ) = viewModelScope.launch {
+        val handler = launchHandler
+        val outcome = if (handler != null) {
+            val orchestrated = handler(
+                AppLaunchRequest(
+                    packageName = packageName,
+                    activityName = activityName,
+                    source = source,
+                    presentation = state.value.presentation,
+                ),
+            )
+            _lastOrchestrated.value = orchestrated
+            orchestrated.outcome
+        } else {
+            _policyBypassed.value = true
+            launcher.launch(packageName, activityName)
+        }
         _lastLaunch.value = outcome
         if (outcome is LaunchOutcome.Started) {
             workspaceRepo.mutate { ExpandedWorkspace.withShellLaunch(it, packageName) }
         }
+    }
+
+    private val _lastOrchestrated = MutableStateFlow<OrchestratedLaunch?>(null)
+    val lastOrchestrated: StateFlow<OrchestratedLaunch?> = _lastOrchestrated.asStateFlow()
+
+    /** True if any launch ever bypassed the orchestrator. Surfaced in diagnostics. */
+    private val _policyBypassed = MutableStateFlow(false)
+    val policyBypassed: StateFlow<Boolean> = _policyBypassed.asStateFlow()
+
+    // ---- per-app compatibility profiles (TZ v4 5.2) ----
+
+    val appCompatStore: StateFlow<AppCompatStore> =
+        (appCompat?.store ?: kotlinx.coroutines.flow.flowOf(AppCompatStore()))
+            .stateIn(viewModelScope, SharingStarted.Eagerly, AppCompatStore())
+
+    fun profileFor(packageName: String): AppCompatibilityProfile =
+        appCompatStore.value.profiles[packageName]
+            ?: AppCompatRepository.defaultFor(packageName)
+
+    fun saveProfile(profile: AppCompatibilityProfile) = viewModelScope.launch {
+        appCompat?.upsert(profile)
     }
 
     fun recordLaunchOutcome(outcome: LaunchOutcome) {
@@ -397,10 +457,12 @@ class ShellViewModel(
         private val optical: OpticalProfileRepository,
         private val installedApps: InstalledAppsRepository,
         private val launcher: StandardAppLauncher,
+        private val appCompat: AppCompatRepository? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ShellViewModel(settings, tiles, workspace, optical, installedApps, launcher) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = ShellViewModel(
+            settings, tiles, workspace, optical, installedApps, launcher, appCompat,
+        ) as T
     }
 }
 

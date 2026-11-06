@@ -22,6 +22,14 @@ enum class FreeformStatus {
     UNSUPPORTED,
 
     /**
+     * CAPABLE - the device reports freeform support, but nothing has been
+     * attempted yet.
+     * Verified by: reading two platform signals. It says nothing about any
+     * launch, which is why it is NOT called REQUESTED (FIX-04).
+     */
+    CAPABLE,
+
+    /**
      * REQUESTED - the shell passed launch bounds to startActivity and the call
      * did not throw.
      * Verified by: our own code path only. This says NOTHING about whether a
@@ -66,6 +74,9 @@ class FreeformLaunchAdapter(
 
     private var observation: FreeformStatus? = null
 
+    /** FIX-04: set only by [launchWindowed], never by a probe. */
+    private var requestedAtLeastOnce: Boolean = false
+
     fun probe(): FreeformCapability {
         val pm = context.packageManager
         val feature = pm.hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT)
@@ -79,10 +90,14 @@ class FreeformLaunchAdapter(
         // Kept in the report because it is useful context, not a branch.
         val multiWindowApi = true
 
+        // FIX-04: a capability probe may NOT report REQUESTED. Nothing has been
+        // requested until launchWindowed() actually asks, and conflating the two
+        // is the precise error this project is written to avoid.
         val recorded = observation
         val status = when {
             recorded != null -> recorded
-            feature || settingOn -> FreeformStatus.REQUESTED
+            requestedAtLeastOnce && (feature || settingOn) -> FreeformStatus.REQUESTED
+            feature || settingOn -> FreeformStatus.CAPABLE
             else -> FreeformStatus.UNSUPPORTED
         }
 
@@ -96,6 +111,11 @@ class FreeformLaunchAdapter(
             append(". ")
             append(
                 when (status) {
+                    FreeformStatus.CAPABLE ->
+                        "This device reports freeform support, but no windowed launch " +
+                            "has been attempted yet, so nothing has been requested or " +
+                            "observed."
+
                     FreeformStatus.UNSUPPORTED ->
                         "This device reports no freeform support. Apps will be launched " +
                             "full-screen. The desktop shell stays usable as a navigation shell."
@@ -163,6 +183,9 @@ class FreeformLaunchAdapter(
             return launcher.launch(packageName, activityName)
         }
 
+        // FIX-04: from here on a request genuinely has been made.
+        requestedAtLeastOnce = true
+
         val bounds = centredBounds(activity, widthFraction, heightFraction)
         val options = ActivityOptions.makeBasic().apply {
             runCatching { launchBounds = bounds }
@@ -178,6 +201,12 @@ class FreeformLaunchAdapter(
     }
 
     fun clearObservation() {
+        observation = null
+    }
+
+    /** Test/diagnostic seam: forget that anything was ever requested. */
+    fun resetRequestHistory() {
+        requestedAtLeastOnce = false
         observation = null
     }
 }
