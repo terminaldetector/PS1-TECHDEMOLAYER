@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "generated": "2026-11-06",
   "specification": "TZ v4.0",
-  "headSha": "244c8965323a980e521b71eb190b0bc2d1d90a4a (parent; this operation's commit follows)",
+  "headSha": "a014f48f90a512fc27d91c4794677a270ecc0a42",
   "device": null,
   "deviceNote": "No Android device or emulator has been available in any session. Every deviceObserved field is false.",
   "statusVocabulary": [
@@ -239,5 +239,6 @@
     "lintWarningNote": "All 30 are GradleDependency / AndroidGradlePluginVersion version notices from deliberate pinning.",
     "instrumentedTests": 0,
     "instrumentedNote": "None written: no emulator was available, and unrun instrumented tests would be an unverified claim."
-  }
+  },
+  "auditedEntrySha": "244c8965323a980e521b71eb190b0bc2d1d90a4a"
 }

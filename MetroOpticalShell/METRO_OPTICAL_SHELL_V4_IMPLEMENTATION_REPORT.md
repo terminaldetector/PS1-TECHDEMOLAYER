@@ -3,6 +3,7 @@
 **Date:** 6 November 2026
 **Branch:** `claude/new-session-rlp3eq`
 **Audited HEAD at entry:** `244c8965323a980e521b71eb190b0bc2d1d90a4a` — **identical to the checkpoint named in TZ v4 §1**, working tree clean
+**Resulting commit:** `a014f48f90a512fc27d91c4794677a270ecc0a42`
 **App root:** `MetroOpticalShell/` · release `com.metro.opticalshell` · debug `com.metro.opticalshell.debug`
 **Environment:** Linux container, JDK 21 / Gradle 8.14.3, Android SDK 35. **No device, no emulator.**
 
